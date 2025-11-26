@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/hybridcertbackend/.venv/.venv.iml" filepath="$PROJECT_DIR$/hybridcertbackend/.venv/.venv.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/dcahybrid.iml" filepath="$PROJECT_DIR$/.idea/dcahybrid.iml" />
+      <module fileurl="file://$PROJECT_DIR$/hybridcertbackend/hybridcertbackend.iml" filepath="$PROJECT_DIR$/hybridcertbackend/hybridcertbackend.iml" />
+      <module fileurl="file://$PROJECT_DIR$/hybridcertfrontend/hybridcertfrontend.iml" filepath="$PROJECT_DIR$/hybridcertfrontend/hybridcertfrontend.iml" />
+    </modules>
+  </component>
+</project>
