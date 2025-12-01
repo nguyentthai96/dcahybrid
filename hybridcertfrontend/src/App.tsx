@@ -2,7 +2,7 @@ import './App.css'
 
 import {useState, useEffect} from 'react';
 import axios from 'axios';
-import {Container} from '@mui/material';
+import {Container, Box} from '@mui/material';
 import VerifyForm from "./components/VerifyForm.tsx";
 import SignForm from "./components/SignForm.tsx";
 import Tabs from "./components/Tabs.tsx";
@@ -29,24 +29,31 @@ function App() {
             const res = await axios.get(`${API_URL}/status`);
             setSystemStatus(res.data);
         } catch (error) {
-            console.error("Backend offline");
+            console.error("Backend offline ", error);
         }
     };
 
 
     return (
-        <>
-            <Header/>
-            {systemStatus && <StatusBar status={systemStatus}/>}
-            <Tabs activeTab={activeTab} setActiveTab={setActiveTab}/>
-            <div className="mt-6">
-                {activeTab === 'sign' ? (
-                    <SignForm API_URL={API_URL} fetchStatus={fetchStatus}/>
-                ) : (
-                    <VerifyForm API_URL={API_URL}/>
-                )}
-            </div>
-        </>
+        <Box className="flex flex-col h-screen overflow-hidden bg-white">
+            <Header />
+            {systemStatus && <StatusBar status={systemStatus} />}
+
+            <Container maxWidth={false} className="flex flex-col h-full py-2 px-4">
+
+                <Box className="mb-50" marginBottom={2}>
+                     <Tabs activeTab={activeTab} setActiveTab={setActiveTab} />
+                </Box>
+
+                <Box className="flex-grow overflow-auto pb-3">
+                    {activeTab === 'sign' ? (
+                        <SignForm API_URL={API_URL} fetchStatus={fetchStatus} />
+                    ) : (
+                        <VerifyForm API_URL={API_URL} />
+                    )}
+                </Box>
+            </Container>
+        </Box>
     );
 }
 

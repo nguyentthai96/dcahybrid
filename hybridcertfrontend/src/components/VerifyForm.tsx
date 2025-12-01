@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Box, Typography, TextField, Button, Paper, Grid, Alert } from '@mui/material';
+import React, {useState} from 'react';
+import {Box, Button, Paper, TextField, Typography} from '@mui/material';
 import axios from 'axios';
 
 interface Props {
@@ -10,10 +10,10 @@ const VerifyForm: React.FC<Props> = ({ API_URL }) => {
     const [verifyFile, setVerifyFile] = useState<File | null>(null);
     const [certJson, setCertJson] = useState('');
     const [verifyResult, setVerifyResult] = useState<any>(null);
-    const [loading, setLoading] = useState(false);
+    const [, setLoading] = useState(false);
 
     const handleVerify = async () => {
-        if (!verifyFile || !certJson) return alert("Please select file AND paste certificate JSON!");
+        if (!verifyFile || !certJson) return alert("Cần cung cấp CSR và Thông tin chứng chỉ JSON!");
         setLoading(true);
         const formData = new FormData();
         formData.append('file', verifyFile);
@@ -37,14 +37,23 @@ const VerifyForm: React.FC<Props> = ({ API_URL }) => {
             </Box>
 
             <Box >
-                <Typography className="mb-1">2. Paste Certificate JSON:</Typography>
+                <Typography className="mb-1">2. Dán Thông tin Chứng chỉ JSON (Certificate JSON):</Typography>
                 <TextField
                     fullWidth
                     multiline
-                    rows={5}
                     placeholder='Dán JSON đã nhận được từ bước cấp phát chứng chỉ ‘Issue’....'
                     value={certJson}
                     onChange={(e) => setCertJson(e.target.value)}
+                    sx={{
+                            "& .MuiInputBase-root": {
+                                height: "50vh",
+                                alignItems: "flex-start",
+                                overflow: "auto",
+                                borderTopLeftRadius: 0,
+                                borderTopRightRadius: 0
+                            }
+                        }}
+                        className="w-full shadow-inner border border-t-0 border-gray-300 rounded-b-md"
                 />
             </Box>
 
@@ -57,7 +66,7 @@ const VerifyForm: React.FC<Props> = ({ API_URL }) => {
                     verifyResult.valid ? 'bg-green-100 border-green-300 text-green-900' : 'bg-red-100 border-red-300 text-red-900'
                 }`}>
                     <Typography variant="h6">
-                        {verifyResult.valid ? "✅ VALID DOCUMENT" : "❌ INVALID DOCUMENT"}
+                        {verifyResult.valid ? "✅ Chứng chỉ hợp lệ (VALID DOCUMENT)" : "❌ Chứng chỉ không hợp lệ (INVALID DOCUMENT)"}
                     </Typography>
                     <Typography>{verifyResult.message}</Typography>
                 </Paper>

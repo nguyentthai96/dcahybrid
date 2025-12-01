@@ -14,7 +14,7 @@ const Tabs: React.FC<Props> = ({ activeTab, setActiveTab }) => (
             className="flex-1 mr-2"
             onClick={() => setActiveTab('sign')}
         >
-            Issue Certificate
+            Cấp phát chứng chỉ (Issue Certificate)
         </Button>
         <Button
             variant={activeTab === 'verify' ? 'contained' : 'outlined'}
@@ -22,7 +22,7 @@ const Tabs: React.FC<Props> = ({ activeTab, setActiveTab }) => (
             className="flex-1"
             onClick={() => setActiveTab('verify')}
         >
-            Verify Document
+            Xác thực (Verify Document)
         </Button>
     </Box>
 );
