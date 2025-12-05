@@ -37,11 +37,11 @@ const VerifyForm: React.FC<Props> = ({ API_URL }) => {
             </Box>
 
             <Box >
-                <Typography className="mb-1">2. Dán Thông tin Chứng chỉ JSON (Certificate JSON):</Typography>
+                <Typography className="mb-1">2. Dán Thông tin Chứng chỉ JSON meta:</Typography>
                 <TextField
                     fullWidth
                     multiline
-                    placeholder='Dán JSON đã nhận được từ bước cấp phát chứng chỉ ‘Issue’....'
+                    placeholder='Dán JSON đã nhận được từ bước trước....'
                     value={certJson}
                     onChange={(e) => setCertJson(e.target.value)}
                     sx={{

@@ -73,7 +73,7 @@ const SignForm: React.FC<Props> = ({ API_URL, fetchStatus }) => {
                 onClick={handleSign}
                 className="mb-6 font-bold"
             >
-                KÝ CHỨNG CHỈ SỐ (ISSUE CERTIFICATE)
+                KÝ CHỨNG CHỈ SỐ (Digital Certificate Signing)
             </Button>
 
             {/* Kết quả hiển thị */}
@@ -108,9 +108,11 @@ const SignForm: React.FC<Props> = ({ API_URL, fetchStatus }) => {
                         multiline
                         // Bỏ rows cố định, dùng CSS để ép chiều cao
                         value={JSON.stringify(signResult, null, 2)}
-                        InputProps={{
-                            readOnly: true,
-                            className: "font-mono text-sm bg-gray-50",
+                        slotProps={{
+                            input: {
+                                readOnly: true,
+                                className: "font-mono text-sm bg-gray-50",
+                            }
                         }}
                         sx={{
                             "& .MuiInputBase-root": {
@@ -130,7 +132,7 @@ const SignForm: React.FC<Props> = ({ API_URL, fetchStatus }) => {
                         className="mt-2 text-blue-600 cursor-pointer hover:underline text-center block w-full py-2 bg-blue-50 rounded border border-blue-100 font-semibold"
                         onClick={handleCopy}
                     >
-                        📋 Sao chép JSON cho bước Xác thực
+                        📋 Sao chép JSON meta cho bước Xác thực
                     </Typography>
                 </Box>
             )}

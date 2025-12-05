@@ -200,3 +200,5 @@ cython_debug/
 instance/*
 !instance/.gitignore
 
+/src/keystore/*
+/src/merkle_db/*

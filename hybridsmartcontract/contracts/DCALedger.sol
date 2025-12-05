@@ -5,26 +5,40 @@ contract DCALedger {
     // Lưu trữ Merkle Root (32 bytes)
     bytes32 public merkleRoot;
 
-    // Địa chỉ của Admin (Server Python)
+    // Địa chỉ của Admin (Server Python); Trong thực tế là MultiSig của Consortium
     address public admin;
 
+    // Mapping để kiểm tra xem một public signal (file hash zk) đã được commit chưa
+    // NTT now not check allow commit many time,  mapping(uint256 => bool) public processedSignals;
+
     // Sự kiện để lưu log (giúp tra cứu lịch sử thay đổi)
-    event RootUpdated(bytes32 indexed oldRoot, bytes32 indexed newRoot, uint256 timestamp);
+    //tra cứu lại qua tx_hash
+    event CertificateCommitted(
+        bytes32 indexed oldRoot,
+        bytes32 indexed newRoot,
+        uint256 indexed publicSignal, // Đây là giá trị Hash ZK cần lấy lại   Hash Poseidon
+        uint256 timestamp
+    );
 
     constructor() {
         // Người deploy contract này sẽ là admin
         admin = msg.sender;
     }
 
-    // Hàm cập nhật Root mới
-    function updateRoot(bytes32 _newRoot) public {
+    // Hàm cập nhật Root mới, để cấp chứng chỉ
+    function submitCertificate(bytes32 _newRoot, uint256 _zkPublicSignal) external {
         require(msg.sender == admin, "Only Admin CA can update root");
 
         bytes32 oldRoot = merkleRoot;
         merkleRoot = _newRoot;
 
-        // Emit sự kiện để client có thể lắng nghe hoặc query lại
-        emit RootUpdated(oldRoot, _newRoot, block.timestamp);
+        // Kiểm tra logic (tuỳ chọn): Không cho phép submit lại cùng 1 tín hiệu nếu muốn
+        // require(!processedSignals[_zkPublicSignal], "Signal already processed");
+        // NTT now not check allow commit many time,
+        // processedSignals[_zkPublicSignal] = true;
+
+        // Emit sự kiện để lưu dữ liệu vào Logs client có thể lắng nghe hoặc query lại
+        emit CertificateCommitted(oldRoot, _newRoot, _zkPublicSignal, block.timestamp);
     }
 
     // Hàm lấy Root hiện tại (thực ra public variable đã tự có getter, nhưng viết rõ cho dễ hiểu)

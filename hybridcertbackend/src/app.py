@@ -1,3 +1,6 @@
+import logging
+import traceback
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import hashlib, json, os, base64
@@ -12,6 +15,11 @@ from DecentralizedCA import DecentralizedCA
 
 app = Flask(__name__)
 CORS(app)  # This allows all origins by default
+#
+app.logger.setLevel(logging.INFO)
+# Nếu bạn muốn ghi ra file thay vì console
+# handler = logging.FileHandler('app.log')
+# app.logger.addHandler(handler)
 
 
 @app.route('/')
@@ -47,6 +55,7 @@ def sign_document():
         result = ca_system.sign_file(file_bytes, { "metadata": metadata, "filename": file.filename})
         return jsonify(result)
     except Exception as e:
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/verify', methods=['POST'])

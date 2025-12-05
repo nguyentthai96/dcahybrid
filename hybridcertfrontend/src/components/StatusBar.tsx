@@ -7,10 +7,11 @@ interface Props {
 
 const StatusBar: React.FC<Props> = ({ status }) => (
     <Box className="bg-blue-900 text-white p-4 rounded-lg text-sm"
-         display="flex"
-         flexDirection="column"
-         alignItems="flex-start"
-         gap={1}
+         display="grid"
+         // flexDirection="column"
+         // alignItems="flex-start"
+         gridTemplateColumns="1fr 1fr"
+         gap={2}
          p="5px 50px"
     >
         <Typography>
@@ -18,7 +19,7 @@ const StatusBar: React.FC<Props> = ({ status }) => (
         </Typography>
 
         <Typography>
-            <strong>Tổng Certs:</strong> {status.total_certs}
+            <strong>Tổng Certs:</strong> {status.total_certs}   <a target="_blank" rel="noopener noreferrer" href="https://app.tryethernal.com/transactions">Tnx link</a>
         </Typography>
     </Box>
 );
