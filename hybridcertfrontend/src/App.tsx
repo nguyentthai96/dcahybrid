@@ -1,6 +1,6 @@
 import './App.css'
 
-import React, {useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import axios from 'axios';
 import {Box, Container} from '@mui/material';
 import VerifyForm from "./components/VerifyForm.tsx";
@@ -8,6 +8,7 @@ import Tabs from "./components/Tabs.tsx";
 import StatusBar from "./components/StatusBar.tsx";
 import Header from "./components/Header.tsx";
 import {IssueCertificate} from "./components/IssueCertificate.tsx";
+import PdfSigner from "./components/PdfSigner.tsx";
 
 interface SystemStatus {
     merkle_root: string;
@@ -50,7 +51,7 @@ function App() {
                     {activeTab === 'sign' ? (
                         <IssueCertificate fetchStatus={fetchStatus}/>
                     ) : (
-                        <VerifyForm API_URL={API_URL} />
+                        <PdfSigner/>
                     )}
                 </Box>
             </Container>
