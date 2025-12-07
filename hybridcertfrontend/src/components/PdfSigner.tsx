@@ -1,140 +1,113 @@
-import {useState} from 'react';
-import {Alert, Box, Button, CircularProgress, Container, Divider, Grid, Paper, Typography} from '@mui/material';
-import {Download, PictureAsPdf, VerifiedUser, VpnKey} from '@mui/icons-material';
+import  {useState} from 'react';
+import {Alert, Box, Button, Container, Divider, Grid, Paper, Tab, Tabs, TextField, Typography} from '@mui/material';
+import {CheckCircle, Download, Error as ErrorIcon, PictureAsPdf, VerifiedUser, VpnKey} from '@mui/icons-material';
 import {signPdfPAdES} from '../pdfSigning';
-import FileUploadBox from "./FileUploadBox.tsx";
-
+import {verifyPdfPAdES, type VerifyResult,} from '../pdfVerification';
 
 export default function PdfSigner() {
-    const [privateKeyFile, setPrivateKeyFile] = useState<File | null>(null);
-    const [privateKeyText, setPrivateKeyText] = useState("");
-    const [userCertFile, setUserCertFile] = useState<File | null>(null);
-    const [userCertText, setUserCertText] = useState("");
-    const [caCertFile, setCaCertFile] = useState<File | null>(null);
-    const [caCertText, setCaCertText] = useState("");
+    const [tab, setTab] = useState(0);
+    const [keyFile, setKeyFile] = useState<string>("");
+    const [certFile, setCertFile] = useState<string>("");
+    const [caFile, setCaFile] = useState<string>("");
     const [pdfFile, setPdfFile] = useState<File | null>(null);
+    const [signedUrl, setSignedUrl] = useState<string | null>(null);
+    const [signError, setSignError] = useState<string | null>(null);
+    const [verifyFile, setVerifyFile] = useState<File | null>(null);
+    const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
 
-    const [loading, setLoading] = useState(false);
-    const [signedPdfUrl, setSignedPdfUrl] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const readFile = (file: File) => new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsText(file);
+    });
 
     const handleSign = async () => {
-        if (!privateKeyText || !userCertText || !pdfFile) {
-            setError("Please upload Private Key, User Certificate and a PDF file.");
-            return;
-        }
-        setError(null);
-        setLoading(true);
-
+        if (!keyFile || !certFile || !pdfFile) return setSignError("Missing Private Key, User Cert or PDF");
         try {
             const pdfBuffer = await pdfFile.arrayBuffer();
-
-            // Gọi hàm ký
-            const signedPdfBytes = await signPdfPAdES(
-                pdfBuffer,
-                privateKeyText,
-                userCertText,
-                caCertText || undefined
-            );
-
-            // Tạo Blob URL
-            const blob = new Blob([signedPdfBytes as any], { type: "application/pdf" });
-            const url = URL.createObjectURL(blob);
-            setSignedPdfUrl(url);
-
-        } catch (err: any) {
-            console.error(err);
-            setError("Signing failed: " + err.message);
-        } finally {
-            setLoading(false);
+            const signedBytes = await signPdfPAdES(pdfBuffer, keyFile, certFile, caFile || undefined);
+            const blob = new Blob([signedBytes as any], { type: "application/pdf" });
+            setSignedUrl(URL.createObjectURL(blob));
+            setSignError(null);
+        } catch (e: any) {
+            setSignError(e.message);
         }
     };
 
+    const handleVerify = async () => {
+        if (!verifyFile) return;
+        const buffer = await verifyFile.arrayBuffer();
+        const res = await verifyPdfPAdES(buffer);
+        setVerifyResult(res);
+    };
+
     return (
-        <Container maxWidth="xl" sx={{ py: 4 }}>
-            <Paper elevation={3} sx={{ p: 4, borderRadius: 3 }}>
-                <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', color: '#1976d2' }}>
-                    React PDF Signing (PAdES / ECDSA secp256k1)
-                </Typography>
+        <Container maxWidth="lg" sx={{ py: 4 }}>
+            <Paper sx={{ p: 3 }}>
+                <Typography variant="h5" gutterBottom color="primary">PAdES-B ECDSA Signer</Typography>
+                <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
+                    <Tab label="Sign" />
+                    <Tab label="Verify" />
+                </Tabs>
 
-                <Grid container spacing={4} sx={{ mt: 1 }}>
-                    <Grid item xs={12} md={5}>
-                        <FileUploadBox
-                            label="Private Key (PEM)"
-                            file={privateKeyFile} setFile={setPrivateKeyFile}
-                            textContent={privateKeyText} setTextContent={setPrivateKeyText}
-                            icon={<VpnKey />} accept=".pem,.key"
-                        />
-                        <FileUploadBox
-                            label="User Certificate (PEM)"
-                            file={userCertFile} setFile={setUserCertFile}
-                            textContent={userCertText} setTextContent={setUserCertText}
-                            icon={<VerifiedUser />} accept=".pem,.crt"
-                        />
-                        <FileUploadBox
-                            label="CA Chain (Optional)"
-                            file={caCertFile} setFile={setCaCertFile}
-                            textContent={caCertText} setTextContent={setCaCertText}
-                            icon={<VerifiedUser color="action"/>} accept=".pem,.crt"
-                        />
-
-                        <Divider sx={{ my: 3 }} />
-
-                        <Box sx={{ mb: 3 }}>
-                            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <PictureAsPdf /> Document to Sign
-                            </Typography>
-                            <Button
-                                variant="outlined"
-                                component="label"
-                                fullWidth
-                                sx={{ height: 60, borderStyle: 'dashed' }}
-                            >
-                                {pdfFile ? pdfFile.name : "Select PDF File"}
-                                <input
-                                    type="file"
-                                    hidden
-                                    accept="application/pdf"
-                                    onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
-                                />
+                {tab === 0 ? (
+                    <Grid container spacing={3}>
+                        <Grid item xs={12} md={5}>
+                            <Button component="label" variant="outlined" startIcon={<VpnKey />} fullWidth sx={{ mb: 1 }}>
+                                Upload Private Key
+                                <input type="file" hidden onChange={async (e) => e.target.files?.[0] && setKeyFile(await readFile(e.target.files[0]))} />
                             </Button>
-                        </Box>
+                            <TextField size="small" fullWidth value={keyFile ? "Key Loaded" : ""} disabled sx={{mb: 2}}/>
 
-                        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+                            <Button component="label" variant="outlined" startIcon={<VerifiedUser />} fullWidth sx={{ mb: 1 }}>
+                                Upload User Cert
+                                <input type="file" hidden onChange={async (e) => e.target.files?.[0] && setCertFile(await readFile(e.target.files[0]))} />
+                            </Button>
+                            <TextField size="small" fullWidth value={certFile ? "Cert Loaded" : ""} disabled sx={{mb: 2}}/>
 
-                        <Button
-                            variant="contained" size="large" fullWidth
-                            onClick={handleSign} disabled={loading}
-                            startIcon={loading ? <CircularProgress size={20} color="inherit"/> : <VerifiedUser />}
-                        >
-                            {loading ? "Signing..." : "Sign Document"}
-                        </Button>
-                    </Grid>
+                            <Button component="label" variant="outlined" startIcon={<VerifiedUser />} fullWidth sx={{ mb: 1 }}>
+                                Upload CA Chain (Optional)
+                                <input type="file" hidden onChange={async (e) => e.target.files?.[0] && setCaFile(await readFile(e.target.files[0]))} />
+                            </Button>
 
-                    <Grid item xs={12} md={7}>
-                        <Box sx={{ height: '80vh', display: 'flex', flexDirection: 'column' }}>
-                            <Typography variant="h6" gutterBottom>Preview</Typography>
-                            <Box sx={{ flex: 1, border: '1px solid #ddd', borderRadius: 2, overflow: 'hidden', bgcolor: '#525659' }}>
-                                {signedPdfUrl ? (
-                                    <iframe src={signedPdfUrl} width="100%" height="100%" style={{ border: 'none' }} title="Signed PDF"/>
-                                ) : (
-                                    <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                                        {pdfFile ? "PDF Loaded. Ready to sign." : "No PDF loaded"}
-                                    </Box>
-                                )}
+                            <Divider sx={{ my: 2 }} />
+
+                            <Button component="label" variant="contained" startIcon={<PictureAsPdf />} fullWidth sx={{ mb: 2, height: 50 }}>
+                                {pdfFile ? pdfFile.name : "Select PDF"}
+                                <input type="file" hidden accept="application/pdf" onChange={(e) => setPdfFile(e.target.files?.[0] || null)} />
+                            </Button>
+
+                            {signError && <Alert severity="error" sx={{ mb: 2 }}>{signError}</Alert>}
+                            <Button variant="contained" color="success" fullWidth size="large" onClick={handleSign} disabled={!pdfFile}>Sign PDF</Button>
+                        </Grid>
+                        <Grid item xs={12} md={7}>
+                            <Box sx={{ height: 600, bgcolor: '#525659', borderRadius: 2 }}>
+                                {signedUrl ? <iframe src={signedUrl} width="100%" height="100%" /> : null}
                             </Box>
-                            {signedPdfUrl && (
-                                <Button
-                                    variant="contained" color="success" sx={{ mt: 2 }}
-                                    href={signedPdfUrl} download={`signed_${pdfFile?.name || 'doc.pdf'}`}
-                                    startIcon={<Download />}
-                                >
-                                    Download Signed PDF
-                                </Button>
-                            )}
-                        </Box>
+                            {signedUrl && <Button href={signedUrl} download="signed.pdf" startIcon={<Download />} sx={{ mt: 2 }}>Download</Button>}
+                        </Grid>
                     </Grid>
-                </Grid>
+                ) : (
+                    <Box maxWidth="600px" mx="auto">
+                        <Button component="label" variant="outlined" fullWidth sx={{ height: 100, borderStyle: 'dashed' }}>
+                            {verifyFile ? verifyFile.name : "Upload PDF to Verify"}
+                            <input type="file" hidden accept="application/pdf" onChange={(e) => setVerifyFile(e.target.files?.[0] || null)} />
+                        </Button>
+                        <Button variant="contained" fullWidth sx={{ mt: 2 }} onClick={handleVerify} disabled={!verifyFile}>Verify</Button>
+                        {verifyResult && (
+                            <Paper sx={{ mt: 3, p: 2, bgcolor: verifyResult.isValid ? '#e8f5e9' : '#ffebee' }}>
+                                <Box display="flex" alignItems="center" gap={1} mb={2}>
+                                    {verifyResult.isValid ? <CheckCircle color="success" /> : <ErrorIcon color="error" />}
+                                    <Typography variant="h6">{verifyResult.isValid ? "VALID" : "INVALID"}</Typography>
+                                </Box>
+                                <Typography><strong>Subject:</strong> {verifyResult.signerSubject}</Typography>
+                                <Typography><strong>Issuer:</strong> {verifyResult.signerIssuer}</Typography>
+                                <Typography><strong>Time:</strong> {verifyResult.signingTime?.toLocaleString()}</Typography>
+                                {verifyResult.errors.map((e, i) => <Alert severity="error" key={i} sx={{ mt: 1 }}>{e}</Alert>)}
+                            </Paper>
+                        )}
+                    </Box>
+                )}
             </Paper>
         </Container>
     );
