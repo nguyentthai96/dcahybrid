@@ -5,7 +5,6 @@ import {Convert} from "pvtsutils";
 
 export interface CertificateDetailsProps {
     certificate: string | X509Certificate;
-    onParsedCertSys?: (details: CertificateDetails) => void;
 }
 
 export interface CertificateDetails {
@@ -18,13 +17,12 @@ export interface CertificateDetails {
     thumbprint: Record<string, string>;
 }
 
-export const CertificateDetails: React.FC<CertificateDetailsProps> = ({certificate, onParsedCertSys}) => {
+export const CertificateDetails: React.FC<CertificateDetailsProps> = ({certificate}) => {
     const [details, setDetails] = React.useState<CertificateDetails>();
-    console.log("CertificateDetails.tsx data certificate", certificate);
     React.useEffect(() => {
         (async () => {
             const cert = typeof certificate === 'string' ? new X509Certificate(certificate) : certificate;
-            console.log("CertificateDetails.tsx useEffect ECDSA details cert", cert);
+            console.debug("CertificateDetails.tsx useEffect ECDSA details cert", cert);
             const thumbprint = await cert.getThumbprint("SHA-256");
             const certVal = {
                 leftDays: (cert.notAfter.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
@@ -38,7 +36,6 @@ export const CertificateDetails: React.FC<CertificateDetailsProps> = ({certifica
                 }
             }
             setDetails(certVal);
-            if (onParsedCertSys) onParsedCertSys(certVal);
         })()
             .catch((e) => {
                 console.error(e);

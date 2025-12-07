@@ -79,7 +79,7 @@ const StatusBar: React.FC<Props> = ({ status, setParsedCertSysDetails }) => {
                     </Tooltip>*/}
                     </ButtonGroup>
                 </Box>
-                <CertificateDetails certificate={status.dca_certificate}  onParsedCertSys={setParsedCertSysDetails}/>
+                <CertificateDetails certificate={status.dca_certificate} />
             </Box>
 
         </Box>

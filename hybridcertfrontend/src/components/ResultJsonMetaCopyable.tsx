@@ -29,22 +29,30 @@ const ResultJsonMetaCopyable: React.FC<Props> = ({dataJson}) => {
 
                     {/* Thông tin Hash & Signature: Căn trái */}
                     <div className="mt-2 text-sm text-gray-800 space-y-1">
-                        <div>
+                        <div style={{display: "flex", alignItems: "left"}}>
                             <strong className="mr-2">Cert Hash: </strong>
                             <span className="font-mono">{dataJson.certificate_hash}</span>
                         </div>
-                        <div>
-                            <strong className="mr-2">Signature (r): </strong>
+                        <div style={{display: "flex", alignItems: "left"}}>
+                            <strong className="mr-2">Signature: </strong>
                             <span className="font-mono">{dataJson.signature.substring(0, 50)}...</span>
                         </div>
-                        <div>
+                        <div style={{display: "flex", alignItems: "left"}}>
                             <strong className="mr-2">Tổng thời gian ký: </strong>
-                            <span className="font-mono">{dataJson.timing.total_ms} millisecond</span>
+                            <span className="font-mono">{dataJson['timing'].total_ms} millisecond</span>
                         </div>
                     </div>
                 </Box>
 
                 {/* TextField JSON Full Màn Hình */}
+                {/* Dòng chữ Click để Copy */}
+                <Typography
+                    variant="caption"
+                    className="mt-2 text-blue-600 cursor-pointer hover:underline text-center block w-full py-2 bg-blue-50 rounded border border-blue-100 font-semibold"
+                    onClick={handleCopy}
+                >
+                    📋 Sao chép JSON meta lưu trữ
+                </Typography>
                 <TextField
                     fullWidth
                     multiline
@@ -52,7 +60,7 @@ const ResultJsonMetaCopyable: React.FC<Props> = ({dataJson}) => {
                     value={JSON.stringify(dataJson, null, 2)}
                     slotProps={{
                         input: {
-                            readOnly: true,
+                            //readOnly: true,
                             className: "font-mono text-sm bg-gray-50",
                         }
                     }}
@@ -67,15 +75,6 @@ const ResultJsonMetaCopyable: React.FC<Props> = ({dataJson}) => {
                     }}
                     className="w-full shadow-inner rounded-b-md"
                 />
-
-                {/* Dòng chữ Click để Copy */}
-                <Typography
-                    variant="caption"
-                    className="mt-2 text-blue-600 cursor-pointer hover:underline text-center block w-full py-2 bg-blue-50 rounded border border-blue-100 font-semibold"
-                    onClick={handleCopy}
-                >
-                    📋 Sao chép JSON meta cho bước Xác thực
-                </Typography>
             </Box>
 
             <Snackbar

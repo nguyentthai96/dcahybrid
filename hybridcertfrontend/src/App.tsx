@@ -1,14 +1,13 @@
 import './App.css'
 
-import React, {useState, useEffect} from 'react';
+import React, {useEffect, useState} from 'react';
 import axios from 'axios';
-import {Container, Box} from '@mui/material';
+import {Box, Container} from '@mui/material';
 import VerifyForm from "./components/VerifyForm.tsx";
-import SignForm from "./components/SignForm.tsx";
 import Tabs from "./components/Tabs.tsx";
 import StatusBar from "./components/StatusBar.tsx";
 import Header from "./components/Header.tsx";
-import type {CertificateDetails} from "./components/CertificateDetails.tsx";
+import {IssueCertificate} from "./components/IssueCertificate.tsx";
 
 interface SystemStatus {
     merkle_root: string;
@@ -22,7 +21,6 @@ export {API_URL};
 function App() {
     const [activeTab, setActiveTab] = useState<'sign' | 'verify'>('sign');
     const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
-    const [parsedCertSysDetails, setParsedCertSysDetails] = React.useState<CertificateDetails>({} as CertificateDetails);
 
     useEffect(() => {
         fetchStatus();
@@ -41,7 +39,7 @@ function App() {
     return (
         <Box className="flex flex-col h-screen overflow-hidden bg-white">
             <Header />
-            {systemStatus && <StatusBar status={systemStatus} setParsedCertSysDetails={setParsedCertSysDetails}/>}
+            {systemStatus && <StatusBar status={systemStatus} />}
             <Container maxWidth={false} className="flex flex-col h-full py-2 px-4">
 
                 <Box className="mb-50 mt-20" marginBottom={2} marginTop={5}>
@@ -50,7 +48,7 @@ function App() {
 
                 <Box className="flex-grow overflow-auto pb-3">
                     {activeTab === 'sign' ? (
-                        <SignForm API_URL={API_URL} fetchStatus={fetchStatus} parsedCertSysDetails={parsedCertSysDetails} />
+                        <IssueCertificate fetchStatus={fetchStatus}/>
                     ) : (
                         <VerifyForm API_URL={API_URL} />
                     )}

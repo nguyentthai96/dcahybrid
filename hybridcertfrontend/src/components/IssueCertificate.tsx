@@ -2,8 +2,6 @@ import {
     Box,
     Button,
     ButtonGroup,
-    FormControl,
-    InputLabel,
     List,
     ListItem,
     Step,
@@ -25,13 +23,13 @@ import {API_URL} from "../App.tsx";
 import ResultJsonMetaCopyable from "./ResultJsonMetaCopyable.tsx";
 import CertificateIssuedAlert from "./CertificateIssuedAlert.tsx";
 import {ContentCopy, Download} from "@mui/icons-material";
+import {groth16} from "snarkjs";
 
 export interface IssueCertificateProps {
-    parsedCertSysDetails: CertificateDetails
     fetchStatus: () => void;
 }
 
-export const IssueCertificate: React.FC<IssueCertificateProps> = ({parsedCertSysDetails, fetchStatus}) => {
+export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus}) => {
 
         const [activeStep, setActiveStep] = React.useState<number>(0);
         const [csr, setCsr] = React.useState<PublicKey | null>(null);
@@ -48,6 +46,8 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({parsedCertSys
         //
         const [alertOpen, setAlertOpen] = React.useState(false);
         const [signResult, setSignResult] = useState<any>(null);
+        //
+        const [verifyResult, setVerifyResult] = useState<any>(null);
 
         const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
             e.preventDefault();
@@ -58,55 +58,6 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({parsedCertSys
             e.preventDefault();
             setIsDragOver(false);
         };
-
-
-        /*const enrollCertificate = async (key: x509.PublicKey, value: any,
-                                         params: CaEnrolParams) => {
-            if (!value) {
-                throw new Error("CA is not initialized");
-            }
-            console.log("enrollCertificate");
-            console.log("value.cert", value);
-            const caCert = new x509.X509Certificate(value);
-
-            const serial = crypto.getRandomValues(new Uint8Array(16));
-            serial[0] &= 0x7f;
-            if (serial[0] === 0) {
-                serial[1] |= 0x80;
-            }
-
-            const certParams: x509.X509CertificateCreateParams = {
-                serialNumber: Convert.ToHex(serial),
-                subject: params.subject,
-                issuer: caCert.subject,
-                // notBefore:  new Date(2025,10,1,0,0,0,0),
-                // notAfter: new Date(Date.now() + 1000 * 60 * 60 * 24 * params.validity),
-                signingAlgorithm: {
-                    hash: "SHA-256",
-                    ...caCert.publicKey.algorithm,
-                },
-                publicKey: key,
-                signingKey: value.key,
-                extensions: [
-                    new x509.BasicConstraintsExtension(false, undefined, true),
-                    await x509.AuthorityKeyIdentifierExtension.create(caCert),
-                    await x509.SubjectKeyIdentifierExtension.create(key),
-                ],
-            };
-            const extensions = certParams.extensions || [];
-            // case "pdf_signing":
-            extensions.push(
-                new x509.KeyUsagesExtension(
-                    x509.KeyUsageFlags.digitalSignature,
-                    true
-                )
-            );
-            extensions.push(
-                new x509.ExtendedKeyUsageExtension(["1.2.840.113583.1.1.10"])
-            ); // Adobe PDF
-
-            return await x509.X509CertificateGenerator.create(certParams);
-        }*/
 
         React.useEffect(() => {
             if (fileCsr) {
@@ -142,7 +93,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({parsedCertSys
                     }
                 };
                 reader.readAsArrayBuffer(fileCsr);
-            }else{
+            } else {
                 setSignResult(null);
             }
         }, [fileCsr]);
@@ -186,10 +137,14 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({parsedCertSys
                 return;
             }
             if (!fileCsr) return alert("CSR is empty, please paste a valid CSR, to get Public Key or X509");
-            if (!ownerInfoOrId) setOwnerInfoOrId(uuidv4())/*return alert("Owner info is empty, please provide owner info");*/
+            const userIdUuid = uuidv4();
+            if (!ownerInfoOrId) {
+                setOwnerInfoOrId(userIdUuid)
+                /*return alert("Owner info is empty, please provide owner info");*/
+            }
             const formData = new FormData();
             formData.append('file', fileCsr);
-            formData.append('metadata', ownerInfoOrId || "No description");
+            formData.append('metadata', ownerInfoOrId || userIdUuid);
 
             try {
                 const res = await axios.post(`${API_URL}/issue`, formData);
@@ -223,7 +178,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({parsedCertSys
                 const a = document.createElement("a");
                 a.href = url;
                 const originalName = fileCsr?.name.replace(/\.[^/.]+$/, "") ?? "uploaded";
-                a.download = `${ownerInfoOrId.substring(0,8)}_user_crt_${originalName}_${Convert.ToHex(thumbprint).substring(0, 8)}.crt.pem`;
+                a.download = `${ownerInfoOrId.substring(0, 8)}_user_crt_${originalName}_${Convert.ToHex(thumbprint).substring(0, 8)}.crt.pem`;
                 a.click();
                 window.URL.revokeObjectURL(url);
                 setAlertOpen(false);
@@ -244,45 +199,72 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({parsedCertSys
         };
 
 
-        // const handleCertValidityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        //     setCertValidity(parseInt(e.target.value));
-        // };
-
-
-        const handleIssue = (value: any) => {
+        const handleVerifyCertificateIssue = () => {
             (async () => {
                 if (!csr) {
                     alert("CSR is empty, please paste a valid CSR, Public Key or X509")
                     return;
                 }
-                try {
-
-
-
-                    setActiveStep(2);
-                } catch (e) {
-                    alert(`Failed to issue certificate: ${e}`);
+                if (!signResult) {
+                    alert("CSR is empty, please paste a valid CSR, Public Key or X509. Issue certificate first.")
                     return;
+                }
+
+                const formData = new FormData();
+                formData.append('pemBase64Certificate', signResult.certificate_crt_pem);
+                formData.append('certificateJson', JSON.stringify(signResult, null, 2));
+
+                try {
+                    const res = await axios.post(`${API_URL}/verify_issue`, formData);
+                    setVerifyResult(res.data);
+                    setActiveStep(2);
+                } catch (err) {
+                    setVerifyResult({valid: false, message: "Server Error or Invalid Format"});
+                    alert(`Server Error or Invalid Format ${err.toString()}`);
                 }
             })();
         };
 
-
-
-
-        const handleCopyPem = () => {
-            navigator.clipboard.writeText(cert);
+        const handleVerifyCertificateIssueZkSnark = () => {
+            (async () => {
+                debugger
+                const vkey = await fetch("/zk/verification_key.json").then(r => r.json());
+                const ok = await groth16.verify(vkey, [verifyResult.on_chain_signal_public.toString()], signResult.zk_proof.proof_data);
+                if (ok) {
+                    setVerifyResult(prev => ({
+                        ...prev,
+                        messageZk: "ZK Proof hợp lệ"
+                    }));
+                } else {
+                    setVerifyResult(prev => ({
+                        ...prev,
+                        messageZk: "CẢNH BÁO: ZK Proof không hợp lệ"
+                    }));
+                }
+            })();
         };
+
+        const clearBackHome = () => {
+            setCsr(null);
+            setActiveStep(0);
+            setFileCsr(null);
+            setCertName(
+                "CN=, O=, C=VN, E="
+            )
+            setOwnerInfoOrId("")
+            setSignResult(null);
+        };
+
 
         return (
             <Box sx={{mt: 2}}>
                 <Box>
                     <Stepper activeStep={activeStep} sx={{mt: 2, mb: 2}}>
-                        <Step>
+                        <Step onClick={() => clearBackHome()}>
                             <StepLabel>Import CSR</StepLabel>
                         </Step>
                         <Step>
-                            <StepLabel>Issued Certificate</StepLabel>
+                            <StepLabel>Verify Issued Certificate</StepLabel>
                         </Step>
                         <Step>
                             <StepLabel>Done</StepLabel>
@@ -300,11 +282,12 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({parsedCertSys
                                 <Box sx={{
                                     bgcolor: 'grey.100', alignItems: "left", display: "flex-start", textAlign: 'left',
                                     m: 0, // Thêm margin-top cho dễ nhìn
+                                    p: 1
                                 }}>
-                                    - Tạo khóa bí mật ECDSA cho chứng chỉ con (user_key.key.pem) <br/>
+                                    <b>- Tạo khóa bí mật ECDSA cho chứng chỉ con (user_key.key.pem)</b> <br/>
                                     <code>openssl ecparam -name secp256k1 -genkey -noout -out user_key.key.pem</code>
                                     <br/>
-                                    - Tạo yêu cầu ký chứng chỉ (CSR) cho chứng chỉ con (user_cert.csr.pem) <br/>
+                                    <b>- Tạo yêu cầu ký chứng chỉ (CSR) cho chứng chỉ con (user_cert.csr.pem)</b> <br/>
                                     <code>openssl req -new -sha256 -key user_key.key.pem -out user_cert.csr.pem -subj
                                         "/C=VN/ST=HCM/L=Ho Chi Minh/O=ClientOrg/OU=IT/CN=ThaiNT"</code>
                                 </Box>
@@ -416,8 +399,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({parsedCertSys
                     <Box>
                         <Box sx={{display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 2}}>
                             <Box sx={{flexGrow: 1}}>
-                                <Typography variant='subtitle1'>Thông tin Chứng chỉ người dùng sở hữu ký bởi
-                                    DCA:</Typography>
+                                <Typography variant='subtitle1'>Thông tin Chứng chỉ người dùng ký bởi DCA:</Typography>
                             </Box>
                             <ButtonGroup variant="outlined" size="small" color="primary">
                                 <Tooltip title="Copy certificate to clipboard">
@@ -454,7 +436,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({parsedCertSys
                             sx={{display: "flex", justifyContent: "flex-end", mt: 2, gap: 1}}
                         >
                             <Button onClick={handleBack}>Cấp phát mới</Button>
-                            <Button onClick={handleIssue}>Issue</Button>
+                            <Button onClick={handleVerifyCertificateIssue}>Xác thực chứng chỉ</Button>
                         </Box>
 
                         {signResult && (
@@ -462,23 +444,22 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({parsedCertSys
                         )}
                     </Box>
                 )}
-                {activeStep === 2 && ( // Done
+                {(activeStep === 2 || activeStep === 3) && ( // Done
                     <Box>
-                        <Typography variant="body2" paragraph>
-                            Certificate issued successfully.
+                        <Typography variant="h6">
+                            {verifyResult.valid ? "✅ Chứng chỉ hợp lệ (VALID ISSUED CERTIFICATE)" : "❌ Chứng chỉ không hợp lệ (INVALID ISSUED CERTIFICATE)"}
                         </Typography>
+                        <Typography sx={{mb: 2}}>{verifyResult.message}</Typography>
+                        {verifyResult.messageZk && <Typography sx={{mb: 2}}>{verifyResult.messageZk}</Typography>}
                         <CertificateDetails certificate={atob(signResult.certificate_crt_pem)}/>
                         <Box sx={{mt: 2}}>
-                            <Typography variant="body2" paragraph>
-                                Issued certificate in PEM format:
-                            </Typography>
                             <TextField
                                 multiline
                                 fullWidth
                                 rows={10}
                                 value={atob(signResult.certificate_crt_pem)}
-                                InputProps={{
-                                    readOnly: true,
+                                slotProps={{
+                                    // readOnly: true,
                                     style: {fontFamily: "Monaco, monospace", fontSize: "12px"},
                                 }}
                             />
@@ -487,8 +468,12 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({parsedCertSys
                             sx={{display: "flex", justifyContent: "flex-end", mt: 2, gap: 1}}
                         >
                             <Button onClick={handleBack}>Xem chứng chỉ (Issued Certificate)</Button>
-                            <Button onClick={handleCopyPem}>Copy</Button>
+                            {(verifyResult.valid && verifyResult.on_chain_signal_public) &&
+                                <Button onClick={handleVerifyCertificateIssueZkSnark}>Verify client zk-SNARK</Button>}
                         </Box>
+                        {signResult && (
+                            <ResultJsonMetaCopyable dataJson={signResult}/>
+                        )}
                     </Box>
                 )}
             </Box>

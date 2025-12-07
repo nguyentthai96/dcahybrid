@@ -7,7 +7,7 @@ interface Props {
 }
 
 const Tabs: React.FC<Props> = ({ activeTab, setActiveTab }) => (
-    <Box className="flex mb-6 mt-5">
+    <Box className="flex mb-6 mt-1">
         <Button
             variant={activeTab === 'sign' ? 'contained' : 'outlined'}
             color="primary"

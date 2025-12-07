@@ -140,6 +140,9 @@ class DecentralizedCA:
         print(f"[SYSTEM] CA Initialized. Public Key: {self.joint_vk.to_string('compressed').hex()}")
         self.builder = None
         self.dca_crt = self.self_signed_certificate()
+        self.dca_cert_obj = x509.load_pem_x509_certificate(
+            self.dca_crt.encode("utf-8")
+        )
 
         # 2. Khởi tạo Storage (Thay thế List RAM bằng LevelDB)
         # Dữ liệu sẽ được lưu bền vững vào thư mục './merkle_db'
@@ -265,6 +268,28 @@ class DecentralizedCA:
 
         return sig_der, r, s
 
+    def mpc_verify_ecdsa_secp256k1_threshold(self, tbs_bytes, signature_der):
+        z = int.from_bytes(hash_sha256(tbs_bytes), "big")
+        """
+        r = int(signature['r'], 16)
+        s = int(signature['s'], 16)
+        """
+        r,s = decode_dss_signature(signature_der)
+        try:
+            # ...  ...
+            w = numbertheory.inverse_mod(s, ORDER)
+            u1 = (z * w) % ORDER
+            u2 = (r * w) % ORDER
+
+            # Reconstruct Point P
+            P = u1 * G + u2 * self.joint_pk_point
+
+            if P.x() % ORDER != r:
+                return False, "Chữ ký ECDSA không hợp lệ (Toán học sai)."
+
+        except Exception as e:
+            return False, f"Lỗi tính toán Verify: {str(e)}"
+
     def encode_der_emn178(self, r, s):
         def der_int(x):
             b = x.to_bytes((x.bit_length() + 7) // 8, 'big')
@@ -377,7 +402,7 @@ class DecentralizedCA:
         # (a) Put TBS
         # 5. Build final ASN.1 Certificate
         cert_pem_bytes = build_certificate_asn1(tbs_bytes, sig_der).encode("utf-8")
-        cert_pem_b64 = base64.b64encode(cert_pem_bytes).decode()
+        cert_pem_b64 = base64.b64encode(cert_pem_bytes).decode() # response client
 
         # 4. Update Merkle Tree (Sử dụng LevelDB)
         # Hash toàn bộ chứng chỉ (TBS + Signature) để tạo lá
@@ -393,7 +418,7 @@ class DecentralizedCA:
         t0 = now_ms()
         tx_hash = None
         #  gọi snarkjs
-        file_hash = hash_sha256(file_bytes)
+        file_hash = hash_sha256(cert_pem_bytes)
         zk_result = self.generate_real_zk_proof(file_hash)
         zk_proof_json_data = "ZK_FAIL"
         zk_public_signals = None
@@ -435,8 +460,8 @@ class DecentralizedCA:
         return {
             "timing": timing,
             "tbs_data": tbs_bytes.hex(),
+            "metadata": metadata,
             "signature": sig_der.hex(),
-            "signature_der_emn178_value": signature_endcode,
             "public_key_hex": self.get_public_key_uncompressed_hex(),
             "certificate_hash": certificate_hash,
             "blockchain_tx": tx_hash,  # Transaction hash để client tra cứu explorer
@@ -444,6 +469,163 @@ class DecentralizedCA:
             # Privacy-Preserving: Có thể verify chứng chỉ (thông qua Y) mà không cần lộ nội dung chứng chỉ (X) cho người xác thực (Verifier) cho đến khi cần thiết.
             "certificate_crt_pem": cert_pem_b64,
         }
+
+    def verify_signature(self, user_cert_obj):
+        if self.dca_cert_obj is None:
+            raise Exception("Root CA is not initialized")
+        ca_public_key = self.dca_cert_obj.public_key()
+        tbs_bytes = user_cert_obj.tbs_certificate_bytes
+        signature = user_cert_obj.signature
+        sig_alg = user_cert_obj.signature_hash_algorithm
+
+        try:
+            ca_public_key.verify(
+                signature,
+                tbs_bytes,
+                ec.ECDSA(sig_alg)
+            )
+            print("Signature OK")
+            return True
+        except Exception as e:
+            print("Signature FAILED:", e)
+            return False
+
+    def verify_user_certificate(self, user_cert_obj):
+        # region Method verify_user_certificate
+        def check_validity(cert):
+            now = datetime.now(timezone.utc)
+            if now < cert.not_valid_before.replace(tzinfo=timezone.utc):
+                return False, "Certificate not valid yet"
+            if now > cert.not_valid_after.replace(tzinfo=timezone.utc):
+                return False, "Certificate expired"
+            return True, "OK"
+        # Require BasicConstraints = CA:FALSE
+        def check_basic_constraints(cert):
+            bc = cert.extensions.get_extension_for_class(x509.BasicConstraints).value
+            if bc.ca:
+                return False, "End-user certificate must not be CA"
+            return True, "OK"
+        def check_key_usage(cert):
+            try:
+                ku = cert.extensions.get_extension_for_class(x509.KeyUsage).value
+                if not ku.digital_signature:
+                    return False, "KeyUsage requires digitalSignature"
+                return True, "OK"
+            except x509.ExtensionNotFound:
+                return True, "No KeyUsage extension"
+        def check_issuer(cert, dca_subject):
+            if cert.issuer != dca_subject:
+                return False, "Issuer mismatch"
+            return True, "OK"
+        # endregion Method verify_user_certificate
+        # ==============================================
+
+        print("Checking signature...")
+        if not self.verify_signature(user_cert_obj):
+            return False, "Invalid signature"
+
+        print("Checking validity...")
+        ok, msg = check_validity(user_cert_obj)
+        if not ok:
+            return False, msg
+
+        print("Checking BasicConstraints...")
+        ok, msg = check_basic_constraints(user_cert_obj)
+        if not ok:
+            return False, msg
+
+        print("Checking KeyUsage...")
+        ok, msg = check_key_usage(user_cert_obj)
+        if not ok:
+            return False, msg
+
+        print("Checking issuer...")
+        ok, msg = check_issuer(user_cert_obj, self.dca_cert_obj.subject)
+        if not ok:
+            return False, msg
+
+        return True, "Certificate valid"
+
+    def verify_issue(self, pem_crt_certificate_str, cert_json):
+        timing = {}  # lưu thời gian từng giai đoạn (ms)
+        t0_total = now_ms()
+        t0 = now_ms()
+        client_tbs_data = cert_json['tbs_data']
+        metadata = cert_json['metadata']
+        signature = cert_json['signature']
+        tx_hash = cert_json['blockchain_tx']
+        """
+        Verify: CRT Verify ECDSA -> Verify Integrity (LevelDB + Blockchain)
+        """
+
+        # 1. Re-construct TBS Check from file and provided metadata
+        # Client gửi file lên, server hash file đó để so khớp với hash trong tbs_data
+        user_cert_obj = x509.load_pem_x509_certificate(
+            pem_crt_certificate_str #.decode("utf-8") # <-- cert_pem_bytes
+        )
+
+        # Decode bytes same with tbs data when issue_ing
+        tbs_bytes = user_cert_obj.tbs_certificate_bytes
+
+        certificate_hash = hash_sha256((pem_crt_certificate_str + metadata["metadata"].encode("utf-8"))).hex()
+        if (certificate_hash != cert_json["certificate_hash"]):
+            return False, "Nội dung file không khớp với chứng chỉ."
+
+        # 2. Verify ECDSA Signature
+        self.verify_user_certificate(user_cert_obj)
+        # No need self.merkle_tree.add_leaf(certificate_hash)
+
+        # 3. Transparency Check (LevelDB & Blockchain)
+        # Check 3.1: Có tồn tại trong DB Off-chain của CA không? Check Merkle Existence (Transparency)
+        # Ở đây ta dùng hàm get_merkle_proof để kiểm tra sự tồn tại
+        # Hash lại toàn bộ để xem có trong cây không
+        merkle_path = self.merkle_tree.get_merkle_proof(certificate_hash)
+        if merkle_path is None:  # signature valid, but hash of tbs_data and signal not in DB
+            return False, "Chữ ký Hợp lệ nhưng KHÔNG tìm thấy trong Database (Cảnh báo: Có thể là chứng chỉ chui)."
+
+        # Check 3.2: Root hiện tại trên Blockchain có khớp với Root tính từ DB không?
+        # (Đây là bước đảm bảo CA không sửa DB sau khi công bố)
+        current_db_root = self.merkle_tree.get_root()
+
+        chain_msg = ""
+        on_chain_signal = ""
+        if self.chain_client and self.chain_client.contract:
+            try:
+                on_chain_root = self.chain_client.contract.functions.merkleRoot().call()
+                # Chuyển bytes32 về hex string (bỏ 0x)
+                on_chain_root_hex = on_chain_root.hex()
+
+                # Hardhat thường trả về hex string, ta cần normalize để so sánh
+                if on_chain_root_hex.startswith('0x'):
+                    on_chain_root_hex = on_chain_root_hex[2:]
+
+                if current_db_root == on_chain_root_hex:  # root_merkle db and on-chain
+                    chain_msg = " (Đã xác thực khớp với Blockchain)"
+                else:
+                    chain_msg = f" (CẢNH BÁO: Root trên Blockchain khác với DB. Chain: {on_chain_root_hex[:10]}...)"
+
+                # Bước 2: Verify Blockchain Existence
+                # CHECK BLOCKCHAIN
+                # Truy vấn Blockchain lấy Signal thực tế đã lưu
+                on_chain_signal = self.chain_client.get_signal_from_tx(tx_hash)
+                if on_chain_signal is None:
+                    return False, "Không tìm thấy thông tin Signal trong Transaction Hash này (hoặc Tx lỗi)."
+                #
+
+                proof_json = cert_json['zk_proof']['proof_data']
+                # 3. VERIFY ZK PROOF (Toán học)
+                # Dùng Signal đã được Chain xác nhận để verify Proof
+                is_math_valid = self.verify_zk_math(proof_json, on_chain_signal)
+                if is_math_valid:
+                    chain_msg += " & ZK Proof hợp lệ"
+                else:
+                    chain_msg += " & CẢNH BÁO: ZK Proof không hợp lệ"
+            except Exception as e:
+                chain_msg = " (Không thể kết nối Blockchain để check Root)"
+                traceback.print_exc()
+        total_ms = round(now_ms() - t0_total, 2)
+        return True, f"Chứng chỉ Hợp lệ & Đã được lưu trữ minh bạch {chain_msg};  Với TIME là {total_ms} millisecond.", on_chain_signal
+
 
     def sign_file(self, file_bytes, metadata):
         timing = {}  # lưu thời gian từng giai đoạn (ms)

@@ -60,6 +60,23 @@ def sign_issue():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/verify_issue', methods=['POST'])
+def verify_issue():
+    if 'pemBase64Certificate' not in request.form or 'certificateJson' not in request.form:
+        return jsonify({"error": "Missing file or certificate JSON"}), 400
+
+    # Parse Certificate JSON
+    try:
+        pem_cert_file_str = base64.b64decode(request.form['pemBase64Certificate'])
+        cert_json = json.loads(request.form['certificateJson'])
+
+
+        is_valid, message, signal_public = ca_system.verify_issue(pem_cert_file_str, cert_json)
+        return jsonify({"valid": is_valid, "message": message, "on_chain_signal_public": str(signal_public)})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": "Invalid Certificate Format", "details": str(e)}), 400
+
 @app.route('/api/sign', methods=['POST'])
 def sign_document():
     if 'file' not in request.files:
