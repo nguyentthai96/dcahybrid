@@ -131,7 +131,7 @@ openssl req -text -noout -verify -in cert.csr.pem
 
 
 2. Xác minh chữ ký của chứng chỉ con
-xác nhận rằng cert.crt.pem thực sự được ký bởi ca.crt.pem
+xác nhận rằng cert.crt.pem thực sự được ký bởi ca.crt.pem, certificate được CA ký
 openssl verify -CAfile ca.crt.pem cert.crt.pem
 ==> cert.crt.pem: OK
 

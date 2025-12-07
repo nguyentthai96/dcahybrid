@@ -75,3 +75,24 @@ cp artifacts/contracts/DCALedger.sol/DCALedger.json ./compiled_contract.json
 Blockchain Local:
 npx hardhat node
 ```
+
+
+
+
+
+
+
+
+
+https://emn178.github.io/online-tools/ecdsa/verify/
+https://decoder.link/matcher
+https://certlogik.com/decoder/#decoder-results
+
+Quy trình kiểm tra chuẩn PKI
+1. Parse certificate
+2. Kiểm tra NotBefore/NotAfter
+3. Kiểm tra BasicConstraints → CA hoặc END ENTITY
+4. Kiểm tra KeyUsage → keyCertSign, digitalSignature
+5. Kiểm tra chain: issuer trong leaf = subject trong CA
+6. Verify chữ ký ECDSA/RSA
+7. Verify CRL hoặc OCSP (nếu muốn nâng cao)

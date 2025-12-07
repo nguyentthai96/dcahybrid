@@ -1,35 +1,64 @@
+import base64
 import traceback
-from datetime import datetime, timezone
 import hashlib
 import os
 import json
 import hashlib
 import random
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 from ecdsa import SECP256k1, numbertheory
 from ecdsa.util import sigencode_string, sigdecode_string
 from ecdsa import VerifyingKey, SECP256k1
 from cryptography.hazmat.primitives.asymmetric.utils import (
     encode_dss_signature, decode_dss_signature
 )
+from cryptography import x509
+from cryptography.x509.oid import NameOID
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric import ec as _ec
+from cryptography.hazmat.primitives import hashes as _hashes
+
+from ecdsa import SECP256k1
+import subprocess
+import time
+from datetime import datetime, timezone, timedelta
+from cryptography.x509.oid import NameOID, SignatureAlgorithmOID
+from pyasn1.type import univ, namedtype, tag
+from pyasn1.codec.der.encoder import encode as der_encode
+from pyasn1.codec.der.decoder import decode as der_decode
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from cryptography.hazmat.primitives.asymmetric import ec
+
+from blockchain_manager import HardhatClient
 from LevelDBMerkleTree import LevelDBMerkleTree
 from LevelDBMerkleTreePymerkle import LevelDBMerkleTreePymerkle
 from MPCNode import MPCNode
-from ecdsa import SECP256k1
-
-from blockchain_manager import HardhatClient
 
 CURVE = SECP256k1
 G = CURVE.generator
 ORDER = G.order()
 
-import subprocess
-import json
-import os
 
-import time
-from datetime import datetime, timezone
+# ===== Custom ASN.1 Structures for X.509 =====
+class AlgorithmIdentifier(univ.Sequence):
+    componentType = namedtype.NamedTypes(
+        namedtype.NamedType('algorithm', univ.ObjectIdentifier()),
+        namedtype.OptionalNamedType('parameters', univ.Null()
+                                    # namedtype.OptionalNamedType('parameters', univ.Null().subtype(
+                                    #     explicitTag=tag.Tag(tag.tagClassUniversal, tag.tagFormatSimple, 5)
+                                    # )
+                                    )
+    )
+
+
+class CertificateASN1(univ.Sequence):
+    componentType = namedtype.NamedTypes(
+        namedtype.NamedType('tbsCertificate', univ.Any()),
+        namedtype.NamedType('signatureAlgorithm', AlgorithmIdentifier()),
+        namedtype.NamedType('signatureValue', univ.BitString())
+    )
 
 
 def now_ms():
@@ -93,6 +122,12 @@ def create_tbs_bytes(file_hash, metadata):
 
 class DecentralizedCA:
     def __init__(self):
+        self.issuer = x509.Name([
+            x509.NameAttribute(NameOID.COUNTRY_NAME, "VN"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "ConsortiumOrg"),
+            x509.NameAttribute(NameOID.COMMON_NAME, "Hybrid DCA"),
+        ])
+
         # 1. Init MPC Nodes
         self.node_a = MPCNode("NodeA")
         self.node_b = MPCNode("NodeB")
@@ -103,6 +138,9 @@ class DecentralizedCA:
         # Convert to VerifyingKey
         self.joint_vk = VerifyingKey.from_public_point(self.joint_pk_point, curve=SECP256k1)
         print(f"[SYSTEM] CA Initialized. Public Key: {self.joint_vk.to_string('compressed').hex()}")
+        self.builder = None
+        self.dca_crt = self.self_signed_certificate()
+
         # 2. Khởi tạo Storage (Thay thế List RAM bằng LevelDB)
         # Dữ liệu sẽ được lưu bền vững vào thư mục './merkle_db'
         self.merkle_tree = LevelDBMerkleTree("./merkle_db")
@@ -134,6 +172,98 @@ class DecentralizedCA:
             # "x": x,
             # "y": y
         }
+
+    def create_tbs_self_signed_builder(self):
+        # 1. Build X.509 TBS Certificate
+        # Parse EC public key
+        uncompressed_hex = self.get_public_key_uncompressed_hex()['x963_uncompressed']
+        pub_bytes = bytes.fromhex(uncompressed_hex)
+        public_key = ec.EllipticCurvePublicKey.from_encoded_point(
+            ec.SECP256K1(), pub_bytes
+        )
+        builder = x509.CertificateBuilder()
+        subject = self.issuer
+        builder = builder.subject_name(self.issuer)
+        builder = builder.issuer_name(self.issuer)
+        issuance_date = datetime(2025, 10, 1, 0, 0, 0, tzinfo=timezone.utc)
+        builder = builder.not_valid_before(issuance_date)
+        builder = builder.not_valid_after(issuance_date + timedelta(days=3650))  # datetime.datetime.now(datetime.UTC)
+        builder = builder.serial_number(x509.random_serial_number())
+        builder = builder.public_key(public_key)
+
+        builder = builder.add_extension(
+            x509.BasicConstraints(ca=True, path_length=None),
+            critical=True
+        )
+        builder = builder.add_extension(
+            x509.KeyUsage(
+                key_cert_sign=True,
+                crl_sign=True,
+                digital_signature=False,
+                key_encipherment=False,
+                key_agreement=False,
+                data_encipherment=False,
+                content_commitment=False,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True
+        )
+        self.builder = builder
+        return builder
+
+    # Dùng public key từ DCA để tạo file ca.crt.pem chuẩn X.509, ECDSA-secp256k1-sha256
+    def self_signed_certificate(self):
+        # 1. Build X.509 TBS Certificate
+        # Parse EC public key
+        # 2. Build Certificate (Không ký)
+        builder = self.create_tbs_self_signed_builder()
+
+        # 3. Tạo TBS bằng ephemeral key
+        # ============================
+        _ephemeral_priv = _ec.generate_private_key(_ec.SECP256R1())
+        _temp_cert = builder.sign(
+            private_key=_ephemeral_priv,
+            algorithm=_hashes.SHA256()
+        )
+
+        # # Lấy TBS (To-Be-Signed)
+        tbs_bytes = _temp_cert.tbs_certificate_bytes
+        # optionally delete ephemeral key reference
+        del _ephemeral_priv
+        # 2. MPC Signature (r,s) → ASN.1 ECDSA signature
+        # 4. MPC signature cho TBS → r, s
+        sig_der, r, s = self.mpc_sign_ecdsa_secp256k1_threshold(tbs_bytes)
+        # signature = {"r": hex(r), "s": hex(s)}
+        # ---------------------------------------------------
+        # (a) Put TBS
+        # 5. Build final ASN.1 Certificate
+        return build_certificate_asn1(tbs_bytes, sig_der)
+
+    def mpc_sign_ecdsa_secp256k1_threshold(self, tbs_bytes):
+        # 2. Create TBS (To-Be-Signed) Structure
+        z = int.from_bytes(hash_sha256(tbs_bytes), "big")
+
+        # 3. MPC Signing Logic (Tính toán phân tán r, s)
+        # k = kA + kB
+        k_a = self.node_a.generate_k_share()
+        k_b = self.node_b.generate_k_share()
+        k_total = (k_a + k_b) % ORDER
+
+        # R point
+        R_point = k_total * G
+        r = R_point.x() % ORDER
+
+        # s = k^-1 * (z + r*sk_total)  # sk_total private share key
+        sk_total = (self.node_a._sk_share + self.node_b._sk_share) % ORDER
+        # print(f"DEBUG [SYSTEM] CA Initialized PRK: {hex(sk_total)[2:]}")
+        inv_k = numbertheory.inverse_mod(k_total, ORDER)
+        s = (inv_k * (z + r * sk_total)) % ORDER
+
+        # signature = {"r": hex(r), "s": hex(s)}
+        sig_der = encode_dss_signature(r, s)
+
+        return sig_der, r, s
 
     def encode_der_emn178(self, r, s):
         def der_int(x):
@@ -225,6 +355,96 @@ class DecentralizedCA:
             print(f"Exception ZK: {e}")
             return None
 
+    def sign_issue(self, file_bytes, metadata):
+        timing = {}  # lưu thời gian từng giai đoạn (ms)
+        t0_total = now_ms()
+        t0 = now_ms()
+        """
+        Quy trình: Hash File -> MPC Sign -> LevelDB Store -> ZK Proof -> Blockchain Commit
+        """
+
+        # 1. Prepare Hash file content
+        # 2. Create TBS (To-Be-Signed) Structure
+        build_tbs = build_tbs_from_csr(self.builder, file_bytes, self.issuer)
+        tbs_bytes = get_tbs_bytes(build_tbs)
+
+        # 3. MPC Signing Logic (Tính toán phân tán r, s)
+        sig_der, r, s = self.mpc_sign_ecdsa_secp256k1_threshold(tbs_bytes)
+        # signature = {"r": hex(r), "s": hex(s)}
+        signature_endcode = self.encode_der_emn178(r, s).hex()
+        timing["mpc_sign_ms"] = round(now_ms() - t0, 2)
+
+        # (a) Put TBS
+        # 5. Build final ASN.1 Certificate
+        cert_pem_bytes = build_certificate_asn1(tbs_bytes, sig_der).encode("utf-8")
+        cert_pem_b64 = base64.b64encode(cert_pem_bytes).decode()
+
+        # 4. Update Merkle Tree (Sử dụng LevelDB)
+        # Hash toàn bộ chứng chỉ (TBS + Signature) để tạo lá
+        t0 = now_ms()
+        certificate_hash = hash_sha256((cert_pem_bytes + metadata["metadata"].encode("utf-8"))).hex()
+        # Thêm vào DB và lấy Root mới ngay lập tức
+        self.root_merkle = self.merkle_tree.add_leaf(certificate_hash)
+        timing["merkle_update_ms"] = round(now_ms() - t0, 2)
+
+        # 5. Generate ZK Proof (Simplified) & Blockchain Commit
+        # Secret ở đây ta lấy ví dụ là file_hash (dạng số)
+        # Chứng minh: "Tôi biết file gốc có hash SHA256 này, tương ứng với hash Poseidon trên chain"
+        t0 = now_ms()
+        tx_hash = None
+        #  gọi snarkjs
+        file_hash = hash_sha256(file_bytes)
+        zk_result = self.generate_real_zk_proof(file_hash)
+        zk_proof_json_data = "ZK_FAIL"
+        zk_public_signals = None
+        if zk_result:
+            """"
+            zk_result -> {
+                "proof": proof_json,
+                "public_hash": public_signals[0]  # Đây chính là giá trị cần ghi lên chain
+            }
+            """
+            zk_proof_json_data = zk_result['proof']  ## json.dumps(zk_result['proof'])
+            zk_public_signals = zk_result['public_hash']  # string
+            # Poseidon dùng cho ZK Verification riêng
+        # Bắt buộc phải lưu Proof để đảm bảo tính Public Verifiability (Khả năng xác minh công khai)
+        #     và Non-repudiation (Chống chối bỏ).
+        #     Nếu không có Proof, hệ thống chỉ là "Trust me", không phải "Don't trust, Verify".
+        # Proof Groth16 rất nhẹ (256 bytes).
+        # Sử dụng Event/Logs và calldata thay vì Storage string giúp chi phí Gas cực thấp, hoàn toàn khả thi cho thực tế.
+        zk_proof = {
+            "root": self.root_merkle,
+            "status": "VALID_ON_CHAIN" if self.chain_client else "INVALID_ON_CHAIN",
+            "proof_data": zk_proof_json_data
+        }
+        timing["zk_proof_ms"] = round(now_ms() - t0, 2)
+
+        if self.chain_client:
+            t0 = now_ms()
+            try:
+                # Gửi Root mới lên Blockchain
+                tx_hash = self.chain_client.submit_root_on_chain(self.root_merkle, zk_public_signals)
+                print(
+                    f"Transaction commitment on chain Tx: {tx_hash} has \nSignal public: {zk_public_signals}  -  Signal Ethernal: {f'0x{int(zk_public_signals):064x}'}")
+            except Exception as e:
+                print(f"Lỗi submit blockchain: {e}")
+            timing["blockchain_commit_ms"] = round(now_ms() - t0, 2)
+
+        timing["total_ms"] = round(now_ms() - t0_total, 2)
+
+        return {
+            "timing": timing,
+            "tbs_data": tbs_bytes.hex(),
+            "signature": sig_der.hex(),
+            "signature_der_emn178_value": signature_endcode,
+            "public_key_hex": self.get_public_key_uncompressed_hex(),
+            "certificate_hash": certificate_hash,
+            "blockchain_tx": tx_hash,  # Transaction hash để client tra cứu explorer
+            "zk_proof": zk_proof,
+            # Privacy-Preserving: Có thể verify chứng chỉ (thông qua Y) mà không cần lộ nội dung chứng chỉ (X) cho người xác thực (Verifier) cho đến khi cần thiết.
+            "certificate_crt_pem": cert_pem_b64,
+        }
+
     def sign_file(self, file_bytes, metadata):
         timing = {}  # lưu thời gian từng giai đoạn (ms)
         t0_total = now_ms()
@@ -236,26 +456,9 @@ class DecentralizedCA:
         # 1. Hash file content
         file_hash = hash_sha256(file_bytes)
         # 2. Create TBS (To-Be-Signed) Structure
-        tbs_json, signature_input = create_tbs_bytes(file_hash, metadata)
-        z = int.from_bytes(hash_sha256(signature_input), 'big')
-
+        tbs_json, tbs_bytes = create_tbs_bytes(file_hash, metadata)  # signature_input is tbs_bytes
         # 3. MPC Signing Logic (Tính toán phân tán r, s)
-        # k = kA + kB
-        k_a = self.node_a.generate_k_share()
-        k_b = self.node_b.generate_k_share()
-        k_total = (k_a + k_b) % ORDER
-
-        # R point
-        R_point = k_total * G
-        r = R_point.x() % ORDER
-
-        # s = k^-1 * (z + r*sk_total)  # sk_total private share key
-        sk_total = (self.node_a._sk_share + self.node_b._sk_share) % ORDER
-        # print(f"DEBUG [SYSTEM] CA Initialized PRK: {hex(sk_total)[2:]}")
-
-        inv_k = numbertheory.inverse_mod(k_total, ORDER)
-        s = (inv_k * (z + r * sk_total)) % ORDER
-
+        sig_der, r, s = self.mpc_sign_ecdsa_secp256k1_threshold(tbs_bytes)
         signature = {"r": hex(r), "s": hex(s)}
         signature_endcode = self.encode_der_emn178(r, s)
         timing["mpc_sign_ms"] = round(now_ms() - t0, 2)
@@ -304,7 +507,8 @@ class DecentralizedCA:
             try:
                 # Gửi Root mới lên Blockchain
                 tx_hash = self.chain_client.submit_root_on_chain(self.root_merkle, zk_public_signals)
-                print(f"Transaction commitment on chain Tx: {tx_hash} has \nSignal public: {zk_public_signals}  -  Signal Ethernal: {f'0x{int(zk_public_signals):064x}'}")
+                print(
+                    f"Transaction commitment on chain Tx: {tx_hash} has \nSignal public: {zk_public_signals}  -  Signal Ethernal: {f'0x{int(zk_public_signals):064x}'}")
             except Exception as e:
                 print(f"Lỗi submit blockchain: {e}")
             timing["blockchain_commit_ms"] = round(now_ms() - t0, 2)
@@ -314,7 +518,7 @@ class DecentralizedCA:
         return {
             "timing": timing,
             "tbs_data": json.loads(tbs_json),
-            "signature_input": signature_input.hex(),
+            "signature_input": tbs_bytes.hex(),
             "signature": signature,
             "signature_value": signature_endcode.hex(),
             "public_key_hex": self.get_public_key_uncompressed_hex(),
@@ -430,7 +634,7 @@ class DecentralizedCA:
         tx_hash = data.get('tx_hash')
         # proof_json_str = data.get('proof')
         # proof_json = json.loads(proof_json_str)
-        proof_json =  data.get('proof')
+        proof_json = data.get('proof')
         # signal = data.get('public_signal')
 
         # is_valid, msg = ca_system.verify_transaction_integrity(file_bytes, tx_hash, proof_json)
@@ -446,7 +650,7 @@ class DecentralizedCA:
             Phải khớp logic với file 'input.json' lúc tạo proof.
             """
             # Ví dụ: Hash SHA256 rồi chuyển thành số nguyên
-            file_hash = hash_sha256(file.read()) # file.read() as file_bytes
+            file_hash = hash_sha256(file.read())  # file.read() as file_bytes
             # Generate ZK Proof (Simplified) against file_hash
             # Secret ở đây ta lấy ví dụ là file_hash (dạng số)
             # Chứng minh: "Tôi biết file gốc có hash SHA256 này, tương ứng với hash Poseidon trên chain"
@@ -496,7 +700,7 @@ class DecentralizedCA:
         except Exception as e:
             print(f"Exception during ZK verify: {e}")
             traceback.print_exc()
-            return jsonify({"valid": False,"error": str(e)}), 500
+            return jsonify({"valid": False, "error": str(e)}), 500
 
     def verify_zk_math(self, proof_json, public_signal):
         """
@@ -550,3 +754,94 @@ class DecentralizedCA:
         except Exception as e:
             print(f"Exception during ZK verify: {e}")
             return False
+
+
+def build_certificate_asn1(tbs_bytes, sig_der):
+    cert_asn1 = CertificateASN1()
+
+    # TBS
+    cert_asn1['tbsCertificate'] = der_decode(tbs_bytes)[0]
+
+    # AlgorithmIdentifier ecdsa-with-SHA256
+    alg = AlgorithmIdentifier()
+    alg['algorithm'] = univ.ObjectIdentifier("1.2.840.10045.4.3.2")
+    alg['parameters'] = univ.Null()
+
+    cert_asn1['signatureAlgorithm'] = alg
+
+    # Signature BIT STRING
+    cert_asn1['signatureValue'] = univ.BitString.fromOctetString(sig_der)
+
+    # Encode full cert
+    final_der = der_encode(cert_asn1)
+    pem = (
+            b"-----BEGIN CERTIFICATE-----\n" +
+            base64.encodebytes(final_der) +
+            b"-----END CERTIFICATE-----\n"
+    )
+    return pem.decode()
+
+
+# call build_tbs_from_csr get builder
+def get_tbs_bytes(builder):
+    ephemeral_priv = ec.generate_private_key(ec.SECP256R1())
+    temp_cert = builder.sign(
+        private_key=ephemeral_priv,
+        algorithm=hashes.SHA256(),
+    )
+    tbs_bytes = temp_cert.tbs_certificate_bytes
+    return tbs_bytes
+
+
+def build_tbs_from_csr(ca_cert, csr_pem: bytes, issuer_subject):
+    owner_subject, owner_public_key = parse_csr(csr_pem)
+
+    builder = x509.CertificateBuilder()
+    builder = builder.subject_name(owner_subject)
+    builder = builder.issuer_name(issuer_subject)
+
+    not_before = datetime.now(timezone.utc)  # datetime(2025, 10, 1, 0, 0, 0, tzinfo=timezone.utc)
+    not_after = not_before + timedelta(days=365)
+
+    builder = builder.not_valid_before(not_before)
+    builder = builder.not_valid_after(not_after)
+
+    builder = builder.serial_number(x509.random_serial_number())
+    builder = builder.public_key(owner_public_key)
+
+    builder = builder.add_extension(
+        x509.BasicConstraints(ca=False, path_length=None),
+        critical=True
+    # ).add_extension(  # AuthorityKeyIdentifier
+    #     x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_cert.public_key()),
+    #     critical=False
+    # ).add_extension(  # SubjectKeyIdentifier
+    #     x509.SubjectKeyIdentifier.from_public_key(owner_public_key),
+    #     critical=False
+    ).add_extension(
+        x509.KeyUsage(digital_signature=True,
+                      content_commitment=False,
+                      key_encipherment=False,
+                      data_encipherment=False,
+                      key_agreement=False,
+                      key_cert_sign=False,
+                      crl_sign=False,
+                      encipher_only=False,
+                      decipher_only=False,
+                      ),
+        critical=True
+    # ).add_extension(
+    #     x509.ExtendedKeyUsage([univ.ObjectIdentifier("1.2.840.113583.1.1.10")]),
+    #     critical=True
+    )
+
+    return builder
+
+
+def parse_csr(csr_pem: bytes):
+    csr = x509.load_pem_x509_csr(csr_pem)
+
+    owner_subject = csr.subject  # Subject DN của Owner
+    owner_public_key = csr.public_key()  # EC/RSA public key
+
+    return owner_subject, owner_public_key

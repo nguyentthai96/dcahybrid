@@ -11,7 +11,7 @@ from nacl import signing
 from nacl.signing import VerifyKey
 from jwcrypto import jwk
 
-from DecentralizedCA import DecentralizedCA
+from DecentralizedCA import DecentralizedCA, parse_csr
 
 app = Flask(__name__)
 CORS(app)  # This allows all origins by default
@@ -37,9 +37,28 @@ ca_system = DecentralizedCA()
 def get_status():
     return jsonify({
         "public_key": ca_system.get_public_key_hex(),
+        "dca_certificate": ca_system.dca_crt,
         "merkle_root": ca_system.merkle_tree.get_root(),
         "total_certs": len(ca_system.merkle_tree.get_all_leaves())
     })
+
+@app.route('/api/issue', methods=['POST'])
+def sign_issue():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files['file']
+    file_bytes = file.read()
+    metadata = request.form.get('metadata', 'User Document')
+
+
+    try:
+        parse_csr(file_bytes)
+        result = ca_system.sign_issue(file_bytes, { "metadata": metadata, "filename": file.filename})
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/sign', methods=['POST'])
 def sign_document():
