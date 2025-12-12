@@ -163,6 +163,12 @@ openssl x509 -req -in cert.csr.pem -CA ca.crt.pem -CAkey ca.key.pem -CAcreateser
 #RSA Tạo yêu cầu ký chứng chỉ (CSR) cho chứng chỉ con (cert.csr.pem) (-newkey create both private user owner)
 #openssl req -new -newkey rsa:2048 -nodes -out HybridDCA.csr -keyout HybridDCA.key -subj "/C=VN/ST=HCM/L=Ho Chi Minh/O=NTT/OU=IT/CN=NTTHAI"
 #########################################################
+# 1. Lấy modulus (public key hash) từ Private Key
+openssl pkey -in user.key -pubout -outform PEM | openssl sha256
+# 2. Lấy modulus từ Certificate
+openssl x509 -in user.crt -pubkey -noout | openssl sha256
+#########################################################
+#########################################################
 ######## RSA 3. Kiểm tra sự khớp nhau giữa Khóa bí mật và Chứng chỉ --> RSA
 3.1 Kiểm tra file khóa bí mật (key.key.pem) khớp với khóa công khai có trong file chứng chỉ (cert.crt.pem) cert.crt.pem
 openssl x509 -in cert.crt.pem -pubkey -noout | openssl rsa -pubin -modulus -noout | openssl md5
@@ -171,3 +177,49 @@ openssl rsa -in key.key.pem -pubout | openssl rsa -pubin -modulus -noout | opens
 ==> Hai mã MD5 (ví dụ: (stdin)= e7a6f23e...) phải giống hệt nhau. 
 #########################################################
 ```
+
+
+
+```shell
+PDF create certificate try
+
+# 1. Tạo Root CA Key (EC secp256k1)
+openssl ecparam -name secp256k1 -genkey -noout -out rootCA.key
+
+# 2. Tạo Root CA Cert (Self-signed)
+openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 3650 -out rootCA.pem -config ca.cnf
+
+# 3. Tạo User Key (EC secp256k1)
+openssl ecparam -name secp256k1 -genkey -noout -out user.key
+
+# 4. Tạo User CSR
+openssl req -new -key user.key -out user.csr -config user.cnf
+
+# 5. Ký User CSR bằng Root CA
+openssl x509 -req -in user.csr -CA rootCA.pem -CAkey rootCA.key -CAcreateserial -out user.crt -days 365 -sha256 -extfile user.cnf -extensions v3_req
+
+#########################################################
+```
+
+
+
+Thư mục Trust Store của Ubuntu
+/usr/local/share/ca-certificates/      # nơi bạn thêm custom CA (.crt)
+/etc/ssl/certs/                        # nơi hệ thống tạo symlink sau khi update
+
+Copy file CA (định dạng .crt, PEM) (File phải có đuôi .crt)
+sudo cp my_ca.crt /usr/local/share/ca-certificates/
+
+Update system CA
+sudo update-ca-certificates
+
+Kiểm tra CA đã được trust chưa
+ls -l /etc/ssl/certs | grep my_ca
+
+
+Xóa file CA khỏi thư mục nguồn
+sudo rm /usr/local/share/ca-certificates/my_ca.crt
+sudo update-ca-certificates --fresh
+
+
+sudo update-ca-certificates --list

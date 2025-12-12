@@ -390,7 +390,7 @@ class DecentralizedCA:
 
         # 1. Prepare Hash file content
         # 2. Create TBS (To-Be-Signed) Structure
-        build_tbs = build_tbs_from_csr(self.builder, file_bytes, self.issuer)
+        build_tbs = build_tbs_from_csr(self.builder, file_bytes, self.issuer, metadata["metadata"])
         tbs_bytes = get_tbs_bytes(build_tbs)
 
         # 3. MPC Signing Logic (Tính toán phân tán r, s)
@@ -975,7 +975,7 @@ def get_tbs_bytes(builder):
     return tbs_bytes
 
 
-def build_tbs_from_csr(ca_cert, csr_pem: bytes, issuer_subject):
+def build_tbs_from_csr(ca_cert, csr_pem: bytes, issuer_subject, user_uuid: str):
     owner_subject, owner_public_key = parse_csr(csr_pem)
 
     builder = x509.CertificateBuilder()
@@ -991,16 +991,20 @@ def build_tbs_from_csr(ca_cert, csr_pem: bytes, issuer_subject):
     builder = builder.serial_number(x509.random_serial_number())
     builder = builder.public_key(owner_public_key)
 
+    # Basic constraints
     builder = builder.add_extension(
         x509.BasicConstraints(ca=False, path_length=None),
         critical=True
+    )
+
     # ).add_extension(  # AuthorityKeyIdentifier
     #     x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_cert.public_key()),
     #     critical=False
     # ).add_extension(  # SubjectKeyIdentifier
     #     x509.SubjectKeyIdentifier.from_public_key(owner_public_key),
-    #     critical=False
-    ).add_extension(
+    #     critical=False )
+
+    builder = builder.add_extension(
         x509.KeyUsage(digital_signature=True,
                       content_commitment=False,
                       key_encipherment=False,
@@ -1016,6 +1020,12 @@ def build_tbs_from_csr(ca_cert, csr_pem: bytes, issuer_subject):
     #     x509.ExtendedKeyUsage([univ.ObjectIdentifier("1.2.840.113583.1.1.10")]),
     #     critical=True
     )
+
+    # Add private extension for UUID
+    uuid_oid = x509.oid.ObjectIdentifier("1.3.6.1.4.1.55555.1.1")
+    uuid_extension = x509.UnrecognizedExtension(uuid_oid, user_uuid.encode("utf-8"))
+
+    builder = builder.add_extension(uuid_extension, critical=False)
 
     return builder
 
