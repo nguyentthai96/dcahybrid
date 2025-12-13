@@ -3,8 +3,7 @@ import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
 import { ec as EC } from "elliptic";
 import {arrayBufferToHex, concatUint8Arrays, hexToUint8Array} from './utils';
-
-const ec = new EC('secp256k1');
+import {verifySignRawWithSecp256k1} from "./cryptoUtils.ts";
 
 export interface VerifyResult {
     isValid: boolean;
@@ -116,16 +115,15 @@ export const verifyPdfPAdES = async (pdfBuffer: ArrayBuffer): Promise<VerifyResu
         // --- 7. VERIFY CRYPTO SIGNATURE ---
         const spki = signerCert.subjectPublicKeyInfo;
         const publicKeyHex = arrayBufferToHex(spki.subjectPublicKey.valueBlock.valueHex);
-        const keyPair = ec.keyFromPublic(publicKeyHex, 'hex');
         const signatureBuffer = signerInfo.signature.valueBlock.valueHex;
 
         // Re-hash attributes (Tag Fix 31)
         const attrsEncoder = new pkijs.SignedAndUnsignedAttributes({type: 0, attributes: signedAttrs.attributes});
         const viewAttrs = new Uint8Array(attrsEncoder.toSchema().toBER(false));
         viewAttrs[0] = 0x31;
-        const attrsHash = await window.crypto.subtle.digest("SHA-256", viewAttrs.buffer as ArrayBuffer);
-
-        if (!keyPair.verify(new Uint8Array(attrsHash), new Uint8Array(signatureBuffer))) {
+        // const attrsHash = await window.crypto.subtle.digest("SHA-256", viewAttrs.buffer as ArrayBuffer);
+        // ECDSA_verify( DER(SignedAttributes), signature )
+        if (!verifySignRawWithSecp256k1(publicKeyHex, signatureBuffer, viewAttrs)) {
             result.errors.push("Invalid Cryptographic Signature.");
         }
 
