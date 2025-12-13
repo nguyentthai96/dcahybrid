@@ -1,19 +1,16 @@
 // src/pdfSigning.ts
-import {
-    PDFDocument, PDFName, PDFNumber, PDFHexString, PDFString,
-    PDFDict, PDFArray, StandardFonts
-} from 'pdf-lib';
+import {PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFString, StandardFonts} from 'pdf-lib';
 import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
 import {
-    parseCertificate, getPrivateKeyHexFromPem, signHashWithSecp256k1,
-    getCertificateDetails, computeCertificateHash, parseCertificateChain
+    computeCertificateHash,
+    getCertificateDetails,
+    getPrivateKeyHexFromPem,
+    parseCertificate,
+    parseCertificateChain,
+    signRawWithSecp256k1
 } from './cryptoUtils';
-import {
-    concatUint8Arrays, findSubarrayIndex, stringToUint8Array,
-    arrayBufferToHex, stringToUtf16Hex
-} from './utils';
-
+import {arrayBufferToHex, concatUint8Arrays, findSubarrayIndex, stringToUint8Array, stringToUtf16Hex} from './utils';
 
 export const signPdfPAdES = async (
     pdfBuffer: ArrayBuffer,
@@ -79,10 +76,10 @@ export const signPdfPAdES = async (
             ContactInfo: PDFString.of(certDetails.email || ""),
 
             // Prop_Build giúp Viewer nhận diện tool tạo (Optional)
-               Prop_Build: pdfDoc.context.obj({
-                   Filter: pdfDoc.context.obj({ Name: PDFName.of('Adobe.PPKLite') }),
-                   App: pdfDoc.context.obj({ Name: PDFName.of('ReactPDFSigner') })
-               })
+            Prop_Build: pdfDoc.context.obj({
+                Filter: pdfDoc.context.obj({Name: PDFName.of('Adobe.PPKLite')}),
+                App: pdfDoc.context.obj({Name: PDFName.of('ReactPDFSigner')})
+            })
         }),
     );
 
@@ -146,51 +143,110 @@ export const signPdfPAdES = async (
     // A. SigningCertificateV2
     const certHash = await computeCertificateHash(userCert);
 
-
     const ESSCertIDv2 = new asn1js.Sequence({
         value: [
             new asn1js.Sequence({value: [new asn1js.ObjectIdentifier({value: "2.16.840.1.101.3.4.2.1"})]}),
+            new pkijs.AlgorithmIdentifier({
+                algorithmId: "2.16.840.1.101.3.4.2.1",
+                algorithmParams: undefined
+            }).toSchema(),
             new asn1js.OctetString({valueHex: certHash})
         ]
     });
-    const SigningCertificateV2 = new asn1js.Sequence({value: [new asn1js.Sequence({value: [ESSCertIDv2]})]});
 
-    const signingCertV2Attr = new pkijs.Attribute({
-        type: "1.2.840.113549.1.9.16.2.47",
-        values: [SigningCertificateV2]
-    });
+
+
 
     // B. SignerInfo
+    // region version 1 fallback
     const signerInfo = new pkijs.SignerInfo({
         version: 1, // IssuerAndSerialNumber -> v1
         sid: new pkijs.IssuerAndSerialNumber({issuer: userCert.issuer, serialNumber: userCert.serialNumber}),
+        //
+        /*sid: new pkijs.SubjectKeyIdentifier({
+            value: userCert.extensions
+                .find(e => e.extnID === "2.5.29.14")
+                ?.extnValue
+        }),*/
+        digestAlgorithm: new pkijs.AlgorithmIdentifier({
+            algorithmId: "2.16.840.1.101.3.4.2.1",
+            algorithmParams: new asn1js.Null()
+        }),
+        signatureAlgorithm: new pkijs.AlgorithmIdentifier({algorithmId: "1.2.840.10045.4.3.2"}) // Params ABSENT // ecdsa-with-SHA256
+    });
+    // endregion version 1 fallback
+
+    // region version 3
+    /*const skiExt = userCert.extensions?.find(
+        e => e.extnID === "2.5.29.14"
+    );
+    if (!skiExt) {
+        throw new Error("SKI not found in user certificate");
+    }
+    // dùng SKI (version 3)
+    const skiAsn1 = asn1js.fromBER(skiExt.extnValue.valueBlock.valueHex);
+    if (skiAsn1.offset === -1) {
+        throw new Error("Invalid SKI ASN.1");
+    }
+    const skiOctet = skiAsn1.result as asn1js.OctetString;
+    const sid = new pkijs.SubjectKeyIdentifier({
+        value: skiOctet.valueBlock.valueHex
+    });
+    const signerInfo = new pkijs.SignerInfo({
+        version: 3,
+        sid: {
+            subjectKeyIdentifier: new asn1js.OctetString({
+                valueHex: skiOctet.valueBlock.valueHex
+            })
+        },
         digestAlgorithm: new pkijs.AlgorithmIdentifier({
             algorithmId: "2.16.840.1.101.3.4.2.1",
             algorithmParams: undefined
         }),//new asn1js.Null() }),
         signatureAlgorithm: new pkijs.AlgorithmIdentifier({algorithmId: "1.2.840.10045.4.3.2"}) // Params ABSENT
-    });
+    });*/
+    // endregion version 3
 
     // C. Signed Attributes (SẮP XẾP LẠI THỨ TỰ CHO ETSI)
     // Thứ tự mong muốn: ContentType -> MessageDigest -> SigningCertificateV2 -> SigningTime
-    const signedAttrs = new pkijs.SignedAndUnsignedAttributes({
-        type: 0,
-        attributes: [
-            // 1. ContentType
-            new pkijs.Attribute({
-                type: "1.2.840.113549.1.9.3",
-                values: [new asn1js.ObjectIdentifier({value: "1.2.840.113549.1.7.1"})]
-            }),
-            // 2. MessageDigest
-            new pkijs.Attribute({
-                type: "1.2.840.113549.1.9.4",
-                values: [new asn1js.OctetString({valueHex: pdfHashBuffer})]
-            }),
-            signingCertV2Attr,
-            new pkijs.Attribute({type: "1.2.840.113549.1.9.5", values: [new asn1js.UTCTime({valueDate: new Date()})]}),
-            new pkijs.Attribute({type: "1.2.840.113549.1.9.16.2.47", values: [SigningCertificateV2]}) // SigningCertificateV2
-        ]
+    const SigningCertificateV2 = new asn1js.Sequence({
+        value: [new asn1js.Sequence({value: [ESSCertIDv2]})]
     });
+    const signedAttrs = new pkijs.SignedAndUnsignedAttributes({
+            type: 0,
+            attributes: [
+                // 1. ContentType
+                new pkijs.Attribute({
+                    type: "1.2.840.113549.1.9.3",
+                    values: [new asn1js.ObjectIdentifier({value: "1.2.840.113549.1.7.1"})]
+                }),
+                // 2. MessageDigest
+                new pkijs.Attribute({
+                    type: "1.2.840.113549.1.9.4",
+                    values: [new asn1js.OctetString({valueHex: pdfHashBuffer})]
+                }),
+                new pkijs.Attribute({type: "1.2.840.113549.1.9.16.2.47", values: [SigningCertificateV2]}), // SigningCertificateV2
+                new pkijs.Attribute({type: "1.2.840.113549.1.9.5", values: [new asn1js.UTCTime({valueDate: new Date()})]}),
+            ]
+        });
+
+    // signedAttrs.attributes.sort((a, b) => {
+    //     const aDer = a.toSchema().toBER(false);
+    //     const bDer = b.toSchema().toBER(false);
+    //     return Buffer.compare(Buffer.from(aDer), Buffer.from(bDer));
+    // });
+    // signedAttrs.attributes.sort((a, b) => {
+    //     const aDer = new Uint8Array(a.toSchema().toBER(false));
+    //     const bDer = new Uint8Array(b.toSchema().toBER(false));
+    //
+    //     const len = Math.min(aDer.length, bDer.length);
+    //     for (let i = 0; i < len; i++) {
+    //         if (aDer[i] !== bDer[i]) {
+    //             return aDer[i] - bDer[i];
+    //         }
+    //     }
+    //     return aDer.length - bDer.length;
+    // });
 
     // @ts-ignore
     signerInfo.signedAttrs = signedAttrs;
@@ -199,23 +255,24 @@ export const signPdfPAdES = async (
     const encodedAttrs = signedAttrs.toSchema().toBER(false);
     const viewAttrs = new Uint8Array(encodedAttrs);
     viewAttrs[0] = 0x31;
-    const attrsHash = await window.crypto.subtle.digest("SHA-256", viewAttrs.buffer as ArrayBuffer);
-
+    // const attrsHash = await window.crypto.subtle.digest("SHA-256", viewAttrs.buffer as ArrayBuffer);
+    // signature = ECDSA_sign( DER(SignedAttributes) )
     const privateKeyHex = getPrivateKeyHexFromPem(privateKeyPem);
-    const signatureValue = signHashWithSecp256k1(new Uint8Array(attrsHash), privateKeyHex);
+    const signatureValue = signRawWithSecp256k1(viewAttrs, privateKeyHex);
+    //const signatureValue = signHashWithSecp256k1(new Uint8Array(attrsHash), privateKeyHex);
     signerInfo.signature = new asn1js.OctetString({valueHex: signatureValue});
 
     // E. SignedData & ContentInfo
     const signedData = new pkijs.SignedData({
         version: 3, // Version 3 hỗ trợ các extension mới tốt hơn
-        encapContentInfo: new pkijs.EncapsulatedContentInfo({eContentType: "1.2.840.113549.1.7.1"}),
+        encapContentInfo: new pkijs.EncapsulatedContentInfo({eContentType: "1.2.840.113549.1.7.1",}),
         certificates: certificates, // Nhúng Full Chain
         signerInfos: [signerInfo],
         // FIX Liệt kê thuật toán digest
-        digestAlgorithms: [
+        digestAlgorithms: [ /* Error The signature is cryptographically invalid */
             new pkijs.AlgorithmIdentifier({
                 algorithmId: "2.16.840.1.101.3.4.2.1", // SHA-256
-                algorithmParams: undefined //new asn1js.Null()
+                algorithmParams: new asn1js.Null() //undefined // new asn1js.Null()
             })
         ]
     });
@@ -224,13 +281,13 @@ export const signPdfPAdES = async (
     // Wrap SignedData into an EXPLICIT [0] constructed element before assigning to ContentInfo.content
     const signedDataSchema = signedData.toSchema(); // asn1js.Sequence for SignedData
     const explicitSignedData = new asn1js.Constructed({
-        idBlock: {tagClass: 3, tagNumber: 0}, // context-specific, tag [0]
+        idBlock: {tagClass: 3, tagNumber: 0, /* isConstructed: true*/}, // context-specific, tag [0]
         value: [signedDataSchema]
     });
 
     const contentInfo = new pkijs.ContentInfo({
         contentType: "1.2.840.113549.1.7.2", // id-signedData
-        content: explicitSignedData // old set not content value signedDataSchema
+        content: signedDataSchema // signedData // signedDataSchema // explicitSignedData // old set not content value signedDataSchema
     });
 
     const cmsContent = contentInfo.toSchema().toBER(false);
