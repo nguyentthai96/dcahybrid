@@ -6,10 +6,10 @@ import {X509Certificate} from "@peculiar/x509";
 import {Convert} from "pvtsutils";
 interface Props {
     status: { merkle_root: string; total_certs: number, dca_certificate:string };
-    setParsedCertSysDetails?: (details: CertificateDetails) => void;
+    // setParsedCertSysDetails?: (details: CertificateDetails) => void;
 }
 
-const StatusBar: React.FC<Props> = ({ status, setParsedCertSysDetails }) => {
+const StatusBar: React.FC<Props> = ({ status }) => {
 
     const handleCopy = () => {
         (async () => {

@@ -85,6 +85,8 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                                     console.log("Pkcs10CertificateRequest readCsrFile cert subject ", csr);
                                     setCertName(csr.subject);
                                 } catch (e) {
+                                    setCsr(null)
+                                    setFileCsr(null)
                                     alert("Invalid Public Key, X509 or CSR");
                                     return;
                                 }
@@ -124,6 +126,8 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                         const csr = new Pkcs10CertificateRequest(value);
                         setCsr(csr.publicKey);
                     } catch (e) {
+                        setCsr(null)
+                        setFileCsr(null)
                         alert("Invalid Public Key, X509 or CSR");
                         return;
                     }
@@ -227,18 +231,17 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
 
         const handleVerifyCertificateIssueZkSnark = () => {
             (async () => {
-                debugger
                 const vkey = await fetch("/zk/verification_key.json").then(r => r.json());
                 const ok = await groth16.verify(vkey, [verifyResult.on_chain_signal_public.toString()], signResult.zk_proof.proof_data);
                 if (ok) {
                     setVerifyResult(prev => ({
                         ...prev,
-                        messageZk: "ZK Proof hợp lệ"
+                        messageZk: "✅ ZK Proof hợp lệ"
                     }));
                 } else {
                     setVerifyResult(prev => ({
                         ...prev,
-                        messageZk: "CẢNH BÁO: ZK Proof không hợp lệ"
+                        messageZk: "❌ CẢNH BÁO: ZK Proof không hợp lệ"
                     }));
                 }
             })();
@@ -274,7 +277,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                 {activeStep === 0 && ( // Import CSR
                     <Box sx={{mt: 2}}>
                         <Box gap={2}>
-                            <Typography sx={{display: "flex", alignItems: "left", flexDirection: "column"}}>
+                            {/*<Typography sx={{display: "flex", alignItems: "left", flexDirection: "column"}}>*/}
                                 <Box sx={{display: "flex", alignItems: "left",}}>
                                     Cung cấp CSR, hoặc dán Khóa công khai hoặc chứng chỉ X509
                                     (Có thể dùng openssl để tạo theo lệnh)
@@ -286,12 +289,12 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                                 }}>
                                     <b>- Tạo khóa bí mật ECDSA cho chứng chỉ con (user_key.key.pem)</b> <br/>
                                     <code>openssl ecparam -name secp256k1 -genkey -noout -out user_key.key.pem</code>
-                                    <br/>
+                                    <br/><br/>
                                     <b>- Tạo yêu cầu ký chứng chỉ (CSR) cho chứng chỉ con (user_cert.csr.pem)</b> <br/>
                                     <code>openssl req -new -sha256 -key user_key.key.pem -out user_cert.csr.pem -subj
                                         "/C=VN/ST=HCM/L=Ho Chi Minh/O=ClientOrg/OU=IT/CN=ThaiNT"</code>
                                 </Box>
-                            </Typography>
+                            {/*</Typography>*/}
                             <List sx={{width: "100%"}}>
                                 <ListItem>
                                     <TextField
@@ -357,6 +360,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                                         type="file"
                                         ref={fileInputRef}
                                         style={{display: "none"}}
+                                        accept=".pem,.csr,.cer,.crt"
                                         onChange={(e) => setFileCsr(e.target.files?.[0] || null)}
                                     />
                                 </Box>
@@ -366,7 +370,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                                         multiline
                                         fullWidth
                                         rows={10}
-                                        value={csr}
+                                        value={csr || undefined}
                                         onChange={handleCsrChange}
                                         slotProps={{
                                             input: {
@@ -459,8 +463,10 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                                 rows={10}
                                 value={atob(signResult.certificate_crt_pem)}
                                 slotProps={{
-                                    // readOnly: true,
-                                    style: {fontFamily: "Monaco, monospace", fontSize: "12px"},
+                                    input: {
+                                        // readOnly: true,
+                                        style: {fontFamily: "Monaco, monospace", fontSize: "12px"},
+                                    }
                                 }}
                             />
                         </Box>

@@ -1,8 +1,8 @@
-import {PDFDict, PDFDocument, PDFHexString, PDFName} from 'pdf-lib';
+import { PDFDict, PDFDocument, PDFHexString, PDFName } from 'pdf-lib';
 import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
-import {ec as EC} from "elliptic";
-import {arrayBufferToHex, concatUint8Arrays} from './utils';
+import { ec as EC } from "elliptic";
+import {arrayBufferToHex, concatUint8Arrays, hexToUint8Array} from './utils';
 
 const ec = new EC('secp256k1');
 
@@ -23,11 +23,11 @@ export const verifyPdfPAdES = async (pdfBuffer: ArrayBuffer): Promise<VerifyResu
     };
 
     try {
-        const pdfDoc = await PDFDocument.load(pdfBuffer, {ignoreEncryption: true});
-
+        // --- 1. EXTRACT SIGNATURE FROM PDF ---
+        const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
         const acroForm = pdfDoc.catalog.lookup(PDFName.of('AcroForm'));
-        if (!acroForm || !(acroForm instanceof PDFDict)) throw new Error("Document not signed");
 
+        if (!acroForm || !(acroForm instanceof PDFDict)) throw new Error("Document not signed");
         const fields = acroForm.lookup(PDFName.of('Fields'));
         // @ts-ignore
         if (!fields || !fields.array || fields.array.length === 0) throw new Error("No signature fields");
@@ -36,60 +36,60 @@ export const verifyPdfPAdES = async (pdfBuffer: ArrayBuffer): Promise<VerifyResu
         const sigWidget = pdfDoc.context.lookup(fields.array[0]) as PDFDict;
         const sigDictRef = sigWidget.lookup(PDFName.of('V')) as PDFDict;
 
-        // Get Contents Bytes
         const contentsObj = sigDictRef.lookup(PDFName.of('Contents'));
         let signatureBytes: Uint8Array;
-        if (contentsObj instanceof PDFHexString) {
+
+        /*if (contentsObj instanceof PDFHexString) {
             const binaryStr = contentsObj.asString();
             signatureBytes = new Uint8Array(binaryStr.length);
             for (let i = 0; i < binaryStr.length; i++) signatureBytes[i] = binaryStr.charCodeAt(i);
         } else {
             throw new Error("Signature Contents is not a HexString.");
+        }*/
+
+        if (contentsObj instanceof PDFHexString) {
+            // PDFHexString.asString() trả về chuỗi hex (không có < >)
+            let hex = contentsObj.asString().trim();
+            // Nếu có ký tự <> (một số viewer/generator), loại bỏ chúng
+            if (hex.startsWith('<') && hex.endsWith('>')) hex = hex.slice(1, -1);
+
+            // Chuyển cặp hex -> bytes
+            signatureBytes = hexToUint8Array(hex);
+        } else {
+            throw new Error("Signature Contents is not a HexString.");
         }
 
-        let actualLength = signatureBytes.length;
-        while (actualLength > 0 && signatureBytes[actualLength - 1] === 0) {
-            actualLength--;
-        }
-        const validBytes = signatureBytes.subarray(0, actualLength);
+        // --- 2. CLEANUP PADDING & PARSE ASN.1 ---
+        // Tìm điểm kết thúc thực sự của ASN.1 Structure để loại bỏ padding 00
+        // asn1js.fromBER sẽ trả về offset - vị trí kết thúc của block hợp lệ đầu tiên
+        const asn1 = asn1js.fromBER(signatureBytes.buffer as ArrayBuffer);
+        if (asn1.offset === -1) throw new Error("Cannot parse ASN.1 from signature bytes.");
 
-        console.log("Verify Crypto Parse ASN.1 from buffer (Auto ignore padding)");
+        // Let PKIjs parse ContentInfo for us
+        const contentInfo = new pkijs.ContentInfo({ schema: asn1.result });
 
-        // Parse ASN.1 from buffer (Auto ignore padding)
-        const asn1 = asn1js.fromBER(validBytes.buffer as ArrayBuffer);
-        if (asn1.offset === -1) throw new Error("Cannot parse ASN.1 from signature.");
+        // contentInfo.content SHOULD be the SignedData schema (maybe wrapped with [0]).
+        // PKIjs expects contentInfo.content to be an asn1js object representing SignedData
 
-        console.log("Verify Crypto Parse ASN.1 from buffer (Auto ignore padding)", asn1);
+        // --- 4. PARSE SIGNED DATA ---
+        // Lúc này ta đã có đúng schema của SignedData, pkijs sẽ không báo lỗi nữa
+        const signedData = new pkijs.SignedData({ schema: contentInfo.content });
 
-        let signedData: pkijs.SignedData;
-
-        // --- TRY PARSE CONTENT INFO FIRST ---
-        try {
-            const contentInfo = new pkijs.ContentInfo({ schema: asn1.result });
-            // Lấy SignedData từ ContentInfo.content
-            signedData = new pkijs.SignedData({ schema: contentInfo.content });
-        } catch (e) {
-            // Fallback: Nếu không phải ContentInfo, thử parse trực tiếp SignedData (Hỗ trợ file cũ)
-            // console.warn("ContentInfo parse failed, trying direct SignedData...");
-            try {
-                signedData = new pkijs.SignedData({ schema: asn1.result });
-            } catch (err2) {
-                throw new Error("Invalid CMS Structure: Neither ContentInfo nor SignedData.");
-            }
-        }
-
+        // --- 5. EXTRACT CERTIFICATE ---
         if (!signedData.certificates || signedData.certificates.length === 0) {
             result.errors.push("No certificates found in CMS.");
             return result;
         }
 
         const signerCert = signedData.certificates[0];
-        console.log("Verify Crypto signerCert ", signerCert);
+
+        // Lấy thông tin hiển thị
+        // @ts-ignore
         result.signerSubject = signerCert.subject.typesAndValues.map(t => t.value.valueBlock.value).join(", ");
         // @ts-ignore
         result.signerIssuer = signerCert.issuer.typesAndValues.map(t => t.value.valueBlock.value).join(", ");
 
-        // Verify Hash
+        // --- 6. VERIFY HASH (INTEGRITY) ---
         // @ts-ignore
         const byteRange = sigDictRef.lookup(PDFName.of('ByteRange')).asArray().map(n => n.asNumber());
         const pdfBytes = new Uint8Array(pdfBuffer);
@@ -110,15 +110,16 @@ export const verifyPdfPAdES = async (pdfBuffer: ArrayBuffer): Promise<VerifyResu
         }
 
         if (arrayBufferToHex(calculatedHash) !== arrayBufferToHex(embeddedHash!)) {
-            result.errors.push("Hash Mismatch.");
+            result.errors.push("Hash Mismatch: Document has been modified.");
         }
 
-        // Verify Crypto
+        // --- 7. VERIFY CRYPTO SIGNATURE ---
         const spki = signerCert.subjectPublicKeyInfo;
         const publicKeyHex = arrayBufferToHex(spki.subjectPublicKey.valueBlock.valueHex);
         const keyPair = ec.keyFromPublic(publicKeyHex, 'hex');
         const signatureBuffer = signerInfo.signature.valueBlock.valueHex;
 
+        // Re-hash attributes (Tag Fix 31)
         const attrsEncoder = new pkijs.SignedAndUnsignedAttributes({type: 0, attributes: signedAttrs.attributes});
         const viewAttrs = new Uint8Array(attrsEncoder.toSchema().toBER(false));
         viewAttrs[0] = 0x31;
@@ -131,8 +132,8 @@ export const verifyPdfPAdES = async (pdfBuffer: ArrayBuffer): Promise<VerifyResu
         if (result.errors.length === 0) result.isValid = true;
 
     } catch (e: any) {
-        console.error("Error verify:", e);
-        result.errors.push("Error verify: " + e.message);
+        console.error("Verification Error:", e);
+        result.errors.push("Verify Exception: " + e.message);
     }
     return result;
 };

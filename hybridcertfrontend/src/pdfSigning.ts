@@ -22,7 +22,7 @@ export const signPdfPAdES = async (
     caCertPem?: string,
 ): Promise<Uint8Array> => {
 
-    // 1. CHUẨN BỊ PDF
+    // --- 1. CHUẨN BỊ PDF ---
     const pdfDoc = await PDFDocument.load(pdfBuffer);
     const pages = pdfDoc.getPages();
     const firstPage = pages[0];
@@ -32,11 +32,11 @@ export const signPdfPAdES = async (
 
     // --- 2. TẠO VISUAL SIGNATURE ---
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const resources = pdfDoc.context.obj({ Font: { Helv: font.ref } });
+    const resources = pdfDoc.context.obj({Font: {Helv: font.ref}});
 
     // Normalize tên để hiển thị trên trang (ASCII only để tránh lỗi font Helvetica)
     const displayName = signerName.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
+    console.log("displayName FILE ", displayName)
     const appearanceStream = pdfDoc.context.register(
         pdfDoc.context.flateStream(
             `q 0.95 0.95 0.95 rg 0 0 250 50 re f 0.5 G 0.5 w 0 0 250 50 re S Q ` +
@@ -53,7 +53,7 @@ export const signPdfPAdES = async (
     // 3. DICTIONARY
     // Tăng size lên 20KB để chắc chắn chứa đủ ContentInfo + Chain
     const byteRangePlaceholder = [PDFNumber.of(0), PDFNumber.of(9999999999), PDFNumber.of(9999999999), PDFNumber.of(9999999999)];
-    const SIGNATURE_LENGTH = 20480;
+    const SIGNATURE_LENGTH = 24576;
     const signatureHexPlaceholder = "0".repeat(SIGNATURE_LENGTH);
 
     // Convert các chuỗi sang UTF-16BE Hex để Okular hiển thị tiếng Việt
@@ -79,10 +79,10 @@ export const signPdfPAdES = async (
             ContactInfo: PDFString.of(certDetails.email || ""),
 
             // Prop_Build giúp Viewer nhận diện tool tạo (Optional)
-           //    Prop_Build: pdfDoc.context.obj({
-           //        Filter: pdfDoc.context.obj({ Name: PDFName.of('Adobe.PPKLite') }),
-           //        App: pdfDoc.context.obj({ Name: PDFName.of('ReactPDFSigner') })
-           //    })
+               Prop_Build: pdfDoc.context.obj({
+                   Filter: pdfDoc.context.obj({ Name: PDFName.of('Adobe.PPKLite') }),
+                   App: pdfDoc.context.obj({ Name: PDFName.of('ReactPDFSigner') })
+               })
         }),
     );
 
@@ -91,7 +91,7 @@ export const signPdfPAdES = async (
             Type: 'Annot', Subtype: 'Widget', FT: 'Sig',
             Rect: [50, 50, 300, 100],
             V: signatureDictRef, P: firstPage.ref, F: 4,
-            AP: pdfDoc.context.obj({ N: appearanceStream }),
+            AP: pdfDoc.context.obj({N: appearanceStream}),
         }),
     );
 
@@ -99,14 +99,14 @@ export const signPdfPAdES = async (
 
     const acroForm = pdfDoc.catalog.lookup(PDFName.of('AcroForm'));
     if (!acroForm || !(acroForm instanceof PDFDict)) {
-        pdfDoc.catalog.set(PDFName.of('AcroForm'), pdfDoc.context.obj({ Fields: [widgetDictRef], SigFlags: 3 }));
+        pdfDoc.catalog.set(PDFName.of('AcroForm'), pdfDoc.context.obj({Fields: [widgetDictRef], SigFlags: 3}));
     } else {
         const fields = acroForm.lookup(PDFName.of('Fields'));
         if (fields instanceof PDFArray) fields.push(widgetDictRef);
         else acroForm.set(PDFName.of('Fields'), pdfDoc.context.obj([widgetDictRef]));
     }
 
-    let pdfBytes = await pdfDoc.save({ useObjectStreams: false });
+    let pdfBytes = await pdfDoc.save({useObjectStreams: false});
 
     // --- 4. UPDATE BYTERANGE ---
     const signatureTag = stringToUint8Array(`<${signatureHexPlaceholder}>`);
@@ -125,7 +125,7 @@ export const signPdfPAdES = async (
     const paddedByteRangeStr = newByteRangeStr.padEnd(match[0].length, " ");
     pdfBytes.set(stringToUint8Array(paddedByteRangeStr), match.index);
 
-    // 5. TẠO CMS (FIX NÚT VIEW CERTIFICATE)
+    // --- 5. TẠO CMS ---
     const range1 = pdfBytes.subarray(0, startIndex);
     const range2 = pdfBytes.subarray(endIndex);
     const dataToSign = concatUint8Arrays([range1, range2]);
@@ -143,76 +143,103 @@ export const signPdfPAdES = async (
         certificates.push(...chainCerts);
     }
 
-    // --- TẠO ATTRIBUTES (Giữ nguyên logic SigningCertificateV2) ---
+    // A. SigningCertificateV2
     const certHash = await computeCertificateHash(userCert);
 
 
     const ESSCertIDv2 = new asn1js.Sequence({
         value: [
-            new asn1js.Sequence({ value: [ new asn1js.ObjectIdentifier({ value: "2.16.840.1.101.3.4.2.1" }) ] }),
-            new asn1js.OctetString({ valueHex: certHash })
+            new asn1js.Sequence({value: [new asn1js.ObjectIdentifier({value: "2.16.840.1.101.3.4.2.1"})]}),
+            new asn1js.OctetString({valueHex: certHash})
         ]
     });
-    const SigningCertificateV2 = new asn1js.Sequence({
-        value: [ new asn1js.Sequence({ value: [ESSCertIDv2] }) ]
-    });
+    const SigningCertificateV2 = new asn1js.Sequence({value: [new asn1js.Sequence({value: [ESSCertIDv2]})]});
+
     const signingCertV2Attr = new pkijs.Attribute({
         type: "1.2.840.113549.1.9.16.2.47",
         values: [SigningCertificateV2]
     });
 
-    // SignerInfo
+    // B. SignerInfo
     const signerInfo = new pkijs.SignerInfo({
-        version: 1,
-        sid: new pkijs.IssuerAndSerialNumber({ issuer: userCert.issuer, serialNumber: userCert.serialNumber }),
-        digestAlgorithm: new pkijs.AlgorithmIdentifier({ algorithmId: "2.16.840.1.101.3.4.2.1", algorithmParams: new asn1js.Null() }),
-        signatureAlgorithm: new pkijs.AlgorithmIdentifier({ algorithmId: "1.2.840.10045.4.3.2" }) // Params ABSENT
+        version: 1, // IssuerAndSerialNumber -> v1
+        sid: new pkijs.IssuerAndSerialNumber({issuer: userCert.issuer, serialNumber: userCert.serialNumber}),
+        digestAlgorithm: new pkijs.AlgorithmIdentifier({
+            algorithmId: "2.16.840.1.101.3.4.2.1",
+            algorithmParams: undefined
+        }),//new asn1js.Null() }),
+        signatureAlgorithm: new pkijs.AlgorithmIdentifier({algorithmId: "1.2.840.10045.4.3.2"}) // Params ABSENT
     });
 
-    // Signed Attributes
+    // C. Signed Attributes (SẮP XẾP LẠI THỨ TỰ CHO ETSI)
+    // Thứ tự mong muốn: ContentType -> MessageDigest -> SigningCertificateV2 -> SigningTime
     const signedAttrs = new pkijs.SignedAndUnsignedAttributes({
         type: 0,
         attributes: [
-            new pkijs.Attribute({ type: "1.2.840.113549.1.9.3", values: [new asn1js.ObjectIdentifier({ value: "1.2.840.113549.1.7.1" })] }),
-            new pkijs.Attribute({ type: "1.2.840.113549.1.9.4", values: [new asn1js.OctetString({ valueHex: pdfHashBuffer })] }),
-            new pkijs.Attribute({ type: "1.2.840.113549.1.9.5", values: [new asn1js.UTCTime({ valueDate: new Date() })] }),
-            signingCertV2Attr
+            // 1. ContentType
+            new pkijs.Attribute({
+                type: "1.2.840.113549.1.9.3",
+                values: [new asn1js.ObjectIdentifier({value: "1.2.840.113549.1.7.1"})]
+            }),
+            // 2. MessageDigest
+            new pkijs.Attribute({
+                type: "1.2.840.113549.1.9.4",
+                values: [new asn1js.OctetString({valueHex: pdfHashBuffer})]
+            }),
+            signingCertV2Attr,
+            new pkijs.Attribute({type: "1.2.840.113549.1.9.5", values: [new asn1js.UTCTime({valueDate: new Date()})]}),
+            new pkijs.Attribute({type: "1.2.840.113549.1.9.16.2.47", values: [SigningCertificateV2]}) // SigningCertificateV2
         ]
     });
 
     // @ts-ignore
     signerInfo.signedAttrs = signedAttrs;
 
-    // Hash & Sign
+    // D. Hash & Sign
     const encodedAttrs = signedAttrs.toSchema().toBER(false);
     const viewAttrs = new Uint8Array(encodedAttrs);
     viewAttrs[0] = 0x31;
     const attrsHash = await window.crypto.subtle.digest("SHA-256", viewAttrs.buffer as ArrayBuffer);
+
     const privateKeyHex = getPrivateKeyHexFromPem(privateKeyPem);
     const signatureValue = signHashWithSecp256k1(new Uint8Array(attrsHash), privateKeyHex);
-    signerInfo.signature = new asn1js.OctetString({ valueHex: signatureValue });
+    signerInfo.signature = new asn1js.OctetString({valueHex: signatureValue});
 
-    // --- TẠO SIGNED DATA ---
+    // E. SignedData & ContentInfo
     const signedData = new pkijs.SignedData({
         version: 3, // Version 3 hỗ trợ các extension mới tốt hơn
-        encapContentInfo: new pkijs.EncapsulatedContentInfo({ eContentType: "1.2.840.113549.1.7.1" }),
+        encapContentInfo: new pkijs.EncapsulatedContentInfo({eContentType: "1.2.840.113549.1.7.1"}),
         certificates: certificates, // Nhúng Full Chain
         signerInfos: [signerInfo],
+        // FIX Liệt kê thuật toán digest
+        digestAlgorithms: [
+            new pkijs.AlgorithmIdentifier({
+                algorithmId: "2.16.840.1.101.3.4.2.1", // SHA-256
+                algorithmParams: undefined //new asn1js.Null()
+            })
+        ]
     });
 
     // PAdES yêu cầu cấu trúc đầy đủ: ContentInfo chứa SignedData
-    const contentInfo = new pkijs.ContentInfo({
-        contentType: "1.2.840.113549.1.7.2", // OID cho id-signedData
-        content: signedData.toSchema()
+    // Wrap SignedData into an EXPLICIT [0] constructed element before assigning to ContentInfo.content
+    const signedDataSchema = signedData.toSchema(); // asn1js.Sequence for SignedData
+    const explicitSignedData = new asn1js.Constructed({
+        idBlock: {tagClass: 3, tagNumber: 0}, // context-specific, tag [0]
+        value: [signedDataSchema]
     });
-    // Serialize ContentInfo (thay vì chỉ SignedData)
+
+    const contentInfo = new pkijs.ContentInfo({
+        contentType: "1.2.840.113549.1.7.2", // id-signedData
+        content: explicitSignedData // old set not content value signedDataSchema
+    });
+
     const cmsContent = contentInfo.toSchema().toBER(false);
-    // old not ContentInfo const cmsHex = arrayBufferToHex(signedData.toSchema().toBER(false));
     const cmsHex = arrayBufferToHex(cmsContent);
 
 
-
-    // Inject
+    // -----------------------------------------------------------
+    // 6. INJECT
+    // -----------------------------------------------------------
     if (cmsHex.length > signatureHexPlaceholder.length) throw new Error(`Signature too large (${cmsHex.length}). Increase size.`);
     const paddedHex = cmsHex.padEnd(signatureHexPlaceholder.length, '0');
     const signatureBlock = stringToUint8Array(`<${paddedHex}>`);

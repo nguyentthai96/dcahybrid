@@ -3,7 +3,6 @@ import './App.css'
 import {useEffect, useState} from 'react';
 import axios from 'axios';
 import {Box, Container} from '@mui/material';
-import VerifyForm from "./components/VerifyForm.tsx";
 import Tabs from "./components/Tabs.tsx";
 import StatusBar from "./components/StatusBar.tsx";
 import Header from "./components/Header.tsx";
@@ -51,7 +50,7 @@ function App() {
                     {activeTab === 'sign' ? (
                         <IssueCertificate fetchStatus={fetchStatus}/>
                     ) : (
-                        <PdfSigner/>
+                        <PdfSigner caSystemInfo={systemStatus}/>
                     )}
                 </Box>
             </Container>
