@@ -47,12 +47,13 @@ export default function PdfSigner({caSystemInfo}: PdfSignerProps) {
         } catch (e: any) {
             console.error("PdfSigner Error: ", e.message || e || "Unknown Error")
             setSignError(e.message);
+            setSignedUrl(null);
         }
     };
 
-    const handleVerify = async () => {
-        if (!verifyFile) return;
-        const buffer = await verifyFile.arrayBuffer();
+    const handleVerify = async (file:File) => {
+        if (!file) return;
+        const buffer = await file.arrayBuffer();
         const res = await verifyPdfPAdES(buffer);
         setVerifyResult(res);
     };
@@ -82,17 +83,6 @@ export default function PdfSigner({caSystemInfo}: PdfSignerProps) {
                     }}
                 />
 
-                {/* CA CHAIN - Intermediate CAs (Optional)
-                <FileUploadBox
-                    label="CA Chain (Optional)"
-                    icon={<VerifiedUser/>}
-                    accept=".pem,.crt,.cer,.txt"
-                    externalText={caFile}
-                    onDataChange={(file, text) => {
-                        setCaFile(text.trim());
-                    }}
-                />*/}
-
                 {/* PDF */}
                 <Button component="label" variant="contained" startIcon={<PictureAsPdf/>} fullWidth
                         sx={{mb: 2, height: 50}}>
@@ -118,24 +108,26 @@ export default function PdfSigner({caSystemInfo}: PdfSignerProps) {
             </Paper>
             <Paper sx={{p: 3}}>
                 {/* <!-- VERIFY PDF --> */}
-                <Typography variant="h6" gutterBottom color="primary">PAdES-B ECDSA Signed</Typography>
+                <Typography variant="h6" gutterBottom color="primary">Verify PAdES-B ECDSA Signed</Typography>
                 <Box mx="auto">
                     <Button component="label" variant="outlined" fullWidth sx={{height: 100, borderStyle: 'dashed'}}>
                         {verifyFile ? verifyFile.name : "Upload PDF to Verify"}
                         <input type="file" hidden accept="application/pdf"
-                               onChange={(e) => setVerifyFile(e.target.files?.[0] || null)}/>
+                               onChange={(e) => {
+                                   setVerifyFile(e.target.files?.[0] || null);
+                                   handleVerify(e.target.files?.[0] || null);
+                               }
+                        }/>
                     </Button>
-                    <Button variant="contained" fullWidth sx={{mt: 2}} onClick={handleVerify}
-                            disabled={!verifyFile}>Verify</Button>
                     {verifyResult && (
                         <Paper sx={{mt: 3, p: 2, bgcolor: verifyResult.isValid ? '#e8f5e9' : '#ffebee'}}>
-                            <Box display="flex" alignItems="center" gap={1} mb={2}>
+                            <Box display="flex" alignItems="center" justifyContent={"center"} gap={1} mb={2}>
                                 {verifyResult.isValid ? <CheckCircle color="success"/> : <ErrorIcon color="error"/>}
-                                <Typography variant="h6">{verifyResult.isValid ? "VALID" : "INVALID"}</Typography>
+                                <Typography variant="h5" align={"center"}>{verifyResult.isValid ? "VALID" : "INVALID"}</Typography>
                             </Box>
-                            <Typography><strong>Subject:</strong> {verifyResult.signerSubject}</Typography>
-                            <Typography><strong>Issuer:</strong> {verifyResult.signerIssuer}</Typography>
-                            <Typography><strong>Time:</strong> {verifyResult.signingTime?.toLocaleString()}</Typography>
+                            <Typography align={"left"}><strong>Subject:</strong> {verifyResult.signerSubject}</Typography>
+                            <Typography align={"left"}><strong>Issuer:</strong> {verifyResult.signerIssuer}</Typography>
+                            <Typography  align={"left"}><strong>Time:</strong> {verifyResult.signingTime?.toLocaleString()}</Typography>
                             {verifyResult.errors.map((e, i) => <Alert severity="error" key={i}
                                                                       sx={{mt: 1}}>{e}</Alert>)}
                         </Paper>
