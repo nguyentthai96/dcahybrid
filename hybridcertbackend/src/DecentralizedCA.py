@@ -138,7 +138,6 @@ class DecentralizedCA:
         # Convert to VerifyingKey
         self.joint_vk = VerifyingKey.from_public_point(self.joint_pk_point, curve=SECP256k1)
         print(f"[SYSTEM] CA Initialized. Public Key: {self.joint_vk.to_string('compressed').hex()}")
-        self.builder = None
         self.dca_crt = self.self_signed_certificate()
         self.dca_cert_obj = x509.load_pem_x509_certificate(
             self.dca_crt.encode("utf-8")
@@ -199,6 +198,10 @@ class DecentralizedCA:
             critical=True
         )
         builder = builder.add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(public_key),
+            critical=False
+        )
+        builder = builder.add_extension(
             x509.KeyUsage(
                 key_cert_sign=True,
                 crl_sign=True,
@@ -212,7 +215,6 @@ class DecentralizedCA:
             ),
             critical=True
         )
-        self.builder = builder
         return builder
 
     # Dùng public key từ DCA để tạo file ca.crt.pem chuẩn X.509, ECDSA-secp256k1-sha256
@@ -390,7 +392,7 @@ class DecentralizedCA:
 
         # 1. Prepare Hash file content
         # 2. Create TBS (To-Be-Signed) Structure
-        build_tbs = build_tbs_from_csr(self.builder, file_bytes, self.issuer, metadata["metadata"])
+        build_tbs = build_tbs_from_csr(self.dca_cert_obj, file_bytes, self.issuer, metadata["metadata"])
         tbs_bytes = get_tbs_bytes(build_tbs)
 
         # 3. MPC Signing Logic (Tính toán phân tán r, s)
@@ -947,7 +949,7 @@ def build_certificate_asn1(tbs_bytes, sig_der):
     # AlgorithmIdentifier ecdsa-with-SHA256
     alg = AlgorithmIdentifier()
     alg['algorithm'] = univ.ObjectIdentifier("1.2.840.10045.4.3.2")
-    alg['parameters'] = univ.Null()
+    alg['parameters'] = univ.Null() # remove Theo RFC 3279 / RFC 5758: # For ECDSA, parameters MUST be ABSENT
 
     cert_asn1['signatureAlgorithm'] = alg
 
@@ -997,12 +999,27 @@ def build_tbs_from_csr(ca_cert, csr_pem: bytes, issuer_subject, user_uuid: str):
         critical=True
     )
 
-    # ).add_extension(  # AuthorityKeyIdentifier
-    #     x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_cert.public_key()),
+    # SubjectKeyIdentifier
+    builder = builder.add_extension(
+        x509.SubjectKeyIdentifier.from_public_key(owner_public_key),
+        critical=False
+    )
+    # AuthorityKeyIdentifier
+    builder = builder.add_extension(
+        x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_cert.public_key()),
+        critical=False
+    )
+    # ski = ca_cert.extensions.get_extension_for_class(
+    #     x509.SubjectKeyIdentifier
+    # ).value.digest
+    # builder = builder.add_extension(
+    #     x509.AuthorityKeyIdentifier(
+    #         key_identifier=ski,
+    #         authority_cert_issuer=None,
+    #         authority_cert_serial_number=None
+    #     ),
     #     critical=False
-    # ).add_extension(  # SubjectKeyIdentifier
-    #     x509.SubjectKeyIdentifier.from_public_key(owner_public_key),
-    #     critical=False )
+    # )
 
     builder = builder.add_extension(
         x509.KeyUsage(digital_signature=True,
