@@ -223,3 +223,46 @@ sudo update-ca-certificates --fresh
 
 
 sudo update-ca-certificates --list
+
+
+
+
+
+
+
+[//]: # (////////////////////////////////////////////////)
+Sinh key & certificate prime256v1 (CA self-signed)
+2.1 Sinh private key (prime256v1)
+openssl ecparam -name prime256v1 -genkey -noout -out user.key.pem
+
+Kiểm tra:
+openssl ec -in user.key.pem -text -noout
+-->
+ASN1 OID: prime256v1
+
+2.2 Sinh CSR
+openssl req -new -key user.key.pem -out user.csr.pem -subj "/C=VN/ST=HCM/L=Ho Chi Minh/O=ClientOrg/OU=IT/CN=ThaiNT"
+
+2.3 Ký certificate (Self-signed – để test)
+openssl x509 -req -in user.csr.pem -signkey user.key.pem -days 365 -out user.crt.pem -sha256
+SHA-256 bắt buộc
+
+2.4 Thêm extensions chuẩn ký số
+Tạo file ext.cnf:
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, nonRepudiation
+extendedKeyUsage = emailProtection
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid
+
+Ký lại:
+openssl x509 -req \
+-in user.csr.pem \
+-signkey user.key.pem \
+-days 365 \
+-out user.crt.pem \
+-sha256 \
+-extfile ext.cnf
+
+3. Kiểm tra certificate trước khi dùng
+   openssl x509 -in user.crt.pem -text -noout
