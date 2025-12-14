@@ -6,7 +6,7 @@ import json
 import hashlib
 import random
 from flask import Flask, request, jsonify
-from ecdsa import SECP256k1, numbertheory
+from ecdsa import SECP256k1, NIST256p, numbertheory
 from ecdsa.util import sigencode_string, sigdecode_string
 from ecdsa import VerifyingKey, SECP256k1
 from cryptography.hazmat.primitives.asymmetric.utils import (
@@ -36,7 +36,9 @@ from LevelDBMerkleTree import LevelDBMerkleTree
 from LevelDBMerkleTreePymerkle import LevelDBMerkleTreePymerkle
 from MPCNode import MPCNode
 
+# prime256v1 = secp256r1
 CURVE = SECP256k1
+# CURVE = NIST256p
 G = CURVE.generator
 ORDER = G.order()
 
@@ -136,7 +138,7 @@ class DecentralizedCA:
         self.joint_pk_point = self.node_a.pk_share + self.node_b.pk_share
 
         # Convert to VerifyingKey
-        self.joint_vk = VerifyingKey.from_public_point(self.joint_pk_point, curve=SECP256k1)
+        self.joint_vk = VerifyingKey.from_public_point(self.joint_pk_point, curve=CURVE)
         print(f"[SYSTEM] CA Initialized. Public Key: {self.joint_vk.to_string('compressed').hex()}")
         self.dca_crt = self.self_signed_certificate()
         self.dca_cert_obj = x509.load_pem_x509_certificate(
@@ -182,6 +184,7 @@ class DecentralizedCA:
         pub_bytes = bytes.fromhex(uncompressed_hex)
         public_key = ec.EllipticCurvePublicKey.from_encoded_point(
             ec.SECP256K1(), pub_bytes
+            # ec.SECP256R1(), pub_bytes
         )
         builder = x509.CertificateBuilder()
         subject = self.issuer
@@ -276,7 +279,7 @@ class DecentralizedCA:
         r = int(signature['r'], 16)
         s = int(signature['s'], 16)
         """
-        r,s = decode_dss_signature(signature_der)
+        r, s = decode_dss_signature(signature_der)
         try:
             # ...  ...
             w = numbertheory.inverse_mod(s, ORDER)
@@ -404,7 +407,7 @@ class DecentralizedCA:
         # (a) Put TBS
         # 5. Build final ASN.1 Certificate
         cert_pem_bytes = build_certificate_asn1(tbs_bytes, sig_der).encode("utf-8")
-        cert_pem_b64 = base64.b64encode(cert_pem_bytes).decode() # response client
+        cert_pem_b64 = base64.b64encode(cert_pem_bytes).decode()  # response client
 
         # 4. Update Merkle Tree (Sử dụng LevelDB)
         # Hash toàn bộ chứng chỉ (TBS + Signature) để tạo lá
@@ -501,12 +504,14 @@ class DecentralizedCA:
             if now > cert.not_valid_after.replace(tzinfo=timezone.utc):
                 return False, "Certificate expired"
             return True, "OK"
+
         # Require BasicConstraints = CA:FALSE
         def check_basic_constraints(cert):
             bc = cert.extensions.get_extension_for_class(x509.BasicConstraints).value
             if bc.ca:
                 return False, "End-user certificate must not be CA"
             return True, "OK"
+
         def check_key_usage(cert):
             try:
                 ku = cert.extensions.get_extension_for_class(x509.KeyUsage).value
@@ -515,10 +520,12 @@ class DecentralizedCA:
                 return True, "OK"
             except x509.ExtensionNotFound:
                 return True, "No KeyUsage extension"
+
         def check_issuer(cert, dca_subject):
             if cert.issuer != dca_subject:
                 return False, "Issuer mismatch"
             return True, "OK"
+
         # endregion Method verify_user_certificate
         # ==============================================
 
@@ -563,7 +570,7 @@ class DecentralizedCA:
         # 1. Re-construct TBS Check from file and provided metadata
         # Client gửi file lên, server hash file đó để so khớp với hash trong tbs_data
         user_cert_obj = x509.load_pem_x509_certificate(
-            pem_crt_certificate_str #.decode("utf-8") # <-- cert_pem_bytes
+            pem_crt_certificate_str  # .decode("utf-8") # <-- cert_pem_bytes
         )
 
         # Decode bytes same with tbs data when issue_ing
@@ -627,7 +634,6 @@ class DecentralizedCA:
                 traceback.print_exc()
         total_ms = round(now_ms() - t0_total, 2)
         return True, f"Chứng chỉ Hợp lệ & Đã được lưu trữ minh bạch {chain_msg};  Với TIME là {total_ms} millisecond.", on_chain_signal
-
 
     def sign_file(self, file_bytes, metadata):
         timing = {}  # lưu thời gian từng giai đoạn (ms)
@@ -949,7 +955,7 @@ def build_certificate_asn1(tbs_bytes, sig_der):
     # AlgorithmIdentifier ecdsa-with-SHA256
     alg = AlgorithmIdentifier()
     alg['algorithm'] = univ.ObjectIdentifier("1.2.840.10045.4.3.2")
-    alg['parameters'] = univ.Null() # remove Theo RFC 3279 / RFC 5758: # For ECDSA, parameters MUST be ABSENT
+    alg['parameters'] = univ.Null()  # remove Theo RFC 3279 / RFC 5758: # For ECDSA, parameters MUST be ABSENT
 
     cert_asn1['signatureAlgorithm'] = alg
 
@@ -1005,25 +1011,28 @@ def build_tbs_from_csr(ca_cert, csr_pem: bytes, issuer_subject, user_uuid: str):
         critical=False
     )
     # AuthorityKeyIdentifier
-    builder = builder.add_extension(
-        x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_cert.public_key()),
-        critical=False
-    )
-    # ski = ca_cert.extensions.get_extension_for_class(
-    #     x509.SubjectKeyIdentifier
-    # ).value.digest
     # builder = builder.add_extension(
-    #     x509.AuthorityKeyIdentifier(
-    #         key_identifier=ski,
-    #         authority_cert_issuer=None,
-    #         authority_cert_serial_number=None
-    #     ),
+    #     x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_cert.public_key()),
     #     critical=False
     # )
+    ski = ca_cert.extensions.get_extension_for_class(
+        x509.SubjectKeyIdentifier
+    ).value.digest
+    builder = builder.add_extension(
+        x509.AuthorityKeyIdentifier(
+            key_identifier=ski,
+            authority_cert_issuer=[
+                x509.DirectoryName(ca_cert.subject)
+            ],
+            authority_cert_serial_number=ca_cert.serial_number
+        ),
+        critical=False
+    )
 
+    # keyUsage = critical, digitalSignature, nonRepudiation
     builder = builder.add_extension(
         x509.KeyUsage(digital_signature=True,
-                      content_commitment=False,
+                      content_commitment=True,
                       key_encipherment=False,
                       data_encipherment=False,
                       key_agreement=False,
@@ -1033,9 +1042,17 @@ def build_tbs_from_csr(ca_cert, csr_pem: bytes, issuer_subject, user_uuid: str):
                       decipher_only=False,
                       ),
         critical=True
-    # ).add_extension(
+    )
+    # .add_extension(
     #     x509.ExtendedKeyUsage([univ.ObjectIdentifier("1.2.840.113583.1.1.10")]),
     #     critical=True
+
+    # extendedKeyUsage = emailProtection
+    builder = builder.add_extension(
+        x509.ExtendedKeyUsage([
+            x509.oid.ExtendedKeyUsageOID.EMAIL_PROTECTION
+        ]),
+        critical=False
     )
 
     # Add private extension for UUID

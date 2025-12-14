@@ -1,9 +1,11 @@
 import os
 import random
 
-from ecdsa import SECP256k1
+from ecdsa import SECP256k1, NIST256p
 
+# prime256v1 = secp256r1
 CURVE = SECP256k1
+# CURVE = NIST256p
 G = CURVE.generator
 ORDER = G.order()
 # ORDER = CURVE.generator.order()
