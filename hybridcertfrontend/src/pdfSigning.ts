@@ -108,7 +108,7 @@ export const signPdfPAdES = async (
     // --- 4. UPDATE BYTERANGE ---
     const signatureTag = stringToUint8Array(`<${signatureHexPlaceholder}>`);
     const startIndex = findSubarrayIndex(pdfBytes, signatureTag);
-    if (startIndex === -1) throw new Error("Signature placeholder not found");
+    if (startIndex === -1) throw new Error("Không tìm thấy placeholder chữ ký trong PDF");
     const endIndex = startIndex + signatureTag.length;
 
     const actualByteRange = [0, startIndex, endIndex, pdfBytes.length - endIndex];
@@ -117,7 +117,7 @@ export const signPdfPAdES = async (
     const pdfString = new TextDecoder("latin1").decode(pdfBytes);
     const byteRangeRegex = /\/ByteRange\s*\[\s*0\s+9999999999\s+9999999999\s+9999999999\s*\]/;
     const match = pdfString.match(byteRangeRegex);
-    if (!match || match.index === undefined) throw new Error("ByteRange placeholder not found");
+    if (!match || match.index === undefined) throw new Error("Không tìm thấy ByteRange placeholder");
 
     const paddedByteRangeStr = newByteRangeStr.padEnd(match[0].length, " ");
     pdfBytes.set(stringToUint8Array(paddedByteRangeStr), match.index);
@@ -153,8 +153,6 @@ export const signPdfPAdES = async (
             new asn1js.OctetString({valueHex: certHash})
         ]
     });
-
-
 
 
     // B. SignerInfo
@@ -213,22 +211,22 @@ export const signPdfPAdES = async (
         value: [new asn1js.Sequence({value: [ESSCertIDv2]})]
     });
     const signedAttrs = new pkijs.SignedAndUnsignedAttributes({
-            type: 0,
-            attributes: [
-                // 1. ContentType
-                new pkijs.Attribute({
-                    type: "1.2.840.113549.1.9.3",
-                    values: [new asn1js.ObjectIdentifier({value: "1.2.840.113549.1.7.1"})]
-                }),
-                // 2. MessageDigest
-                new pkijs.Attribute({
-                    type: "1.2.840.113549.1.9.4",
-                    values: [new asn1js.OctetString({valueHex: pdfHashBuffer})]
-                }),
-                new pkijs.Attribute({type: "1.2.840.113549.1.9.16.2.47", values: [SigningCertificateV2]}), // SigningCertificateV2
-                new pkijs.Attribute({type: "1.2.840.113549.1.9.5", values: [new asn1js.UTCTime({valueDate: new Date()})]}),
-            ]
-        });
+        type: 0,
+        attributes: [
+            // 1. ContentType
+            new pkijs.Attribute({
+                type: "1.2.840.113549.1.9.3",
+                values: [new asn1js.ObjectIdentifier({value: "1.2.840.113549.1.7.1"})]
+            }),
+            // 2. MessageDigest
+            new pkijs.Attribute({
+                type: "1.2.840.113549.1.9.4",
+                values: [new asn1js.OctetString({valueHex: pdfHashBuffer})]
+            }),
+            new pkijs.Attribute({type: "1.2.840.113549.1.9.16.2.47", values: [SigningCertificateV2]}), // SigningCertificateV2
+            new pkijs.Attribute({type: "1.2.840.113549.1.9.5", values: [new asn1js.UTCTime({valueDate: new Date()})]}),
+        ]
+    });
 
     // signedAttrs.attributes.sort((a, b) => {
     //     const aDer = a.toSchema().toBER(false);
@@ -297,7 +295,9 @@ export const signPdfPAdES = async (
     // -----------------------------------------------------------
     // 6. INJECT
     // -----------------------------------------------------------
-    if (cmsHex.length > signatureHexPlaceholder.length) throw new Error(`Signature too large (${cmsHex.length}). Increase size.`);
+    if (cmsHex.length > signatureHexPlaceholder.length) {
+        throw new Error(`Chữ ký quá lớn (${cmsHex.length}). Cần tăng kích thước placeholder.`);
+    }
     const paddedHex = cmsHex.padEnd(signatureHexPlaceholder.length, '0');
     const signatureBlock = stringToUint8Array(`<${paddedHex}>`);
 

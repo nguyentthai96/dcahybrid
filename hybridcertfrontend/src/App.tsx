@@ -38,12 +38,12 @@ function App() {
 
     return (
         <Box className="flex flex-col h-screen overflow-hidden bg-white">
-            <Header />
-            {systemStatus && <StatusBar status={systemStatus} />}
+            <Header/>
+            {systemStatus && <StatusBar status={systemStatus}/>}
             <Container maxWidth={false} className="flex flex-col h-full py-2 px-4">
 
                 <Box className="mb-50 mt-20" marginBottom={2} marginTop={5}>
-                     <Tabs activeTab={activeTab} setActiveTab={setActiveTab} />
+                    <Tabs activeTab={activeTab} setActiveTab={setActiveTab}/>
                 </Box>
 
                 <Box className="flex-grow overflow-auto pb-3">

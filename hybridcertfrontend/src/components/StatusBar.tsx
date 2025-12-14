@@ -6,7 +6,6 @@ import {X509Certificate} from "@peculiar/x509";
 import {Convert} from "pvtsutils";
 interface Props {
     status: { merkle_root: string; total_certs: number, dca_certificate:string };
-    // setParsedCertSysDetails?: (details: CertificateDetails) => void;
 }
 
 const StatusBar: React.FC<Props> = ({ status }) => {
@@ -58,7 +57,7 @@ const StatusBar: React.FC<Props> = ({ status }) => {
             <Box>
                 <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 2 }}>
                     <Box sx={{ flexGrow: 1 }} >
-                        <Typography  variant='subtitle1'>Thông tin Chứng chỉ gốc:</Typography>
+                        <Typography  variant='subtitle1'>Thông tin Chứng chỉ gốc CA (self signed cert):</Typography>
                     </Box>
                     <ButtonGroup variant="outlined" size="small" color="primary">
                         <Tooltip title="Copy certificate to clipboard">
@@ -68,15 +67,9 @@ const StatusBar: React.FC<Props> = ({ status }) => {
                         </Tooltip>
                         <Tooltip title="Download CA Certificate">
                             <Button onClick={handleDownload} size="small">
-                                dca_root.crt.pem<Download fontSize="small" />
+                                hybrid_dca_root.crt.pem<Download fontSize="small" />
                             </Button>
                         </Tooltip>
-
-                        {/*<Tooltip title="Remove CA">
-                        <Button onClick={handleRemove} size="small">
-                            <DeleteForever fontSize="small" />
-                        </Button>
-                    </Tooltip>*/}
                     </ButtonGroup>
                 </Box>
                 <CertificateDetails certificate={status.dca_certificate} />

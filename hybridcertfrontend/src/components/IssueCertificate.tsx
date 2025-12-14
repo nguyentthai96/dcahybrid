@@ -33,15 +33,12 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
 
         const [activeStep, setActiveStep] = React.useState<number>(0);
         const [csr, setCsr] = React.useState<PublicKey | null>(null);
-        const [certName, setCertName] = React.useState<string>(
-            "CN=, O=, C=VN, E="
-        );
+        const [certName, setCertName] = React.useState<string>("CN=, O=, C=VN, E="        );
         const [ownerInfoOrId, setOwnerInfoOrId] = React.useState<string>('');
-        // const [certValidity, setCertValidity] = React.useState<number>(365);
+
         const fileInputRef = React.useRef<HTMLInputElement>(null);
         const [fileCsr, setFileCsr] = React.useState<File | null>(null); // to set edit public view
         const [isDragOver, setIsDragOver] = React.useState(false);
-
 
         //
         const [alertOpen, setAlertOpen] = React.useState(false);
@@ -87,7 +84,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                                 } catch (e) {
                                     setCsr(null)
                                     setFileCsr(null)
-                                    alert("Invalid Public Key, X509 or CSR");
+                                    alert("Khóa công khai, Chứng chỉ X.509 hoặc Yêu cầu ký chứng chỉ (CSR) không hợp lệ.");
                                     return;
                                 }
                             }
@@ -137,18 +134,18 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
 
         const handleSign = async () => {
             if (!csr) {
-                alert("CSR is empty, please paste a valid CSR, to get Public Key or X509")
+                alert("CSR trống. Vui lòng cung cấp Yêu cầu ký chứng chỉ (CSR), Khóa công khai hoặc Chứng chỉ X.509 hợp lệ.")
                 return;
             }
-            if (!fileCsr) return alert("CSR is empty, please paste a valid CSR, to get Public Key or X509");
-            const userIdUuid = uuidv4();
-            if (!ownerInfoOrId) {
-                setOwnerInfoOrId(userIdUuid)
-                /*return alert("Owner info is empty, please provide owner info");*/
+            if (!fileCsr) {
+                return alert("CSR trống. Vui lòng cung cấp CSR hợp lệ để trích xuất Khóa công khai hoặc Chứng chỉ X.509");
             }
+            const userId = ownerInfoOrId || uuidv4();
+            setOwnerInfoOrId(userId);
+
             const formData = new FormData();
-            formData.append('file', fileCsr);
-            formData.append('metadata', ownerInfoOrId || userIdUuid);
+            formData.append("file", fileCsr);
+            formData.append("metadata", userId);
 
             try {
                 const res = await axios.post(`${API_URL}/issue`, formData);
@@ -158,7 +155,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                     fetchStatus();
                 }
             } catch (err) {
-                alert("Ký số thất bại (Signing failed)");
+                alert("Quá trình ký số và cấp phát chứng chỉ thất bại (Signing failed)");
             }
         };
 
@@ -173,7 +170,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
             (async () => {
                 console.log("download enroll issued Certificate", signResult.certificate_crt_pem);
                 if (!signResult || !signResult.certificate_crt_pem) {
-                    alert("No certificate to download.");
+                    alert("Không có chứng chỉ để tải xuống.");
                 }
                 const cert = new X509Certificate(atob(signResult.certificate_crt_pem));
                 const thumbprint = await cert.getThumbprint();
@@ -191,7 +188,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
 
         const handleImportCsr = () => {
             if (!csr) {
-                alert("CSR is empty, please paste a valid CSR, to get Public Key or X509")
+                alert("Không tìm thấy CSR hợp lệ. Vui lòng cung cấp Yêu cầu ký chứng chỉ (CSR), Khóa công khai hoặc Chứng chỉ X.509 hợp lệ.")
                 return;
             }
 
@@ -206,11 +203,11 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
         const handleVerifyCertificateIssue = () => {
             (async () => {
                 if (!csr) {
-                    alert("CSR is empty, please paste a valid CSR, Public Key or X509")
+                    alert("CSR trống. Vui lòng cung cấp CSR, Khóa công khai hoặc Chứng chỉ X.509 hợp lệ.")
                     return;
                 }
                 if (!signResult) {
-                    alert("CSR is empty, please paste a valid CSR, Public Key or X509. Issue certificate first.")
+                    alert("Cần thực hiện cấp phát chứng chỉ trước khi xác minh.")
                     return;
                 }
 
@@ -223,8 +220,8 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                     setVerifyResult(res.data);
                     setActiveStep(2);
                 } catch (err) {
-                    setVerifyResult({valid: false, message: "Server Error or Invalid Format"});
-                    alert(`Server Error or Invalid Format ${err.toString()}`);
+                    setVerifyResult({valid: false, message: "Lỗi máy chủ hoặc định dạng dữ liệu không hợp lệ."});
+                    alert(`Lỗi máy chủ hoặc định dạng dữ liệu không hợp lệ: ${err.toString()}`);
                 }
             })();
         };
@@ -236,12 +233,12 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                 if (ok) {
                     setVerifyResult(prev => ({
                         ...prev,
-                        messageZk: "✅ ZK Proof hợp lệ"
+                        messageZk: "✅ Bằng chứng không tiết lộ (ZK Proof) hợp lệ"
                     }));
                 } else {
                     setVerifyResult(prev => ({
                         ...prev,
-                        messageZk: "❌ CẢNH BÁO: ZK Proof không hợp lệ"
+                        messageZk: "❌ CẢNH BÁO: Bằng chứng không tiết lộ (ZK Proof) không hợp lệ"
                     }));
                 }
             })();
@@ -264,13 +261,13 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                 <Box>
                     <Stepper activeStep={activeStep} sx={{mt: 2, mb: 2}}>
                         <Step onClick={() => clearBackHome()}>
-                            <StepLabel>Import CSR</StepLabel>
+                            <StepLabel>Cung cấp Yêu cầu ký chứng chỉ (CSR)</StepLabel>
                         </Step>
                         <Step>
-                            <StepLabel>Verify Issued Certificate</StepLabel>
+                            <StepLabel>Xác minh chứng chỉ đã cấp phát</StepLabel>
                         </Step>
                         <Step>
-                            <StepLabel>Done</StepLabel>
+                            <StepLabel>Hoàn tất xác thực</StepLabel>
                         </Step>
                     </Stepper>
                 </Box>
@@ -279,7 +276,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                         <Box gap={2}>
                             {/*<Typography sx={{display: "flex", alignItems: "left", flexDirection: "column"}}>*/}
                                 <Box sx={{display: "flex", alignItems: "left",}}>
-                                    Cung cấp CSR, hoặc dán Khóa công khai hoặc chứng chỉ X509
+                                    Cung cấp Yêu cầu ký chứng chỉ (CSR), hoặc dán Khóa công khai hoặc chứng chỉ X.509
                                     (Có thể dùng openssl để tạo theo lệnh)
                                 </Box>
                                 <Box sx={{
@@ -287,11 +284,11 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                                     m: 0, // Thêm margin-top cho dễ nhìn
                                     p: 1
                                 }}>
-                                    <b>- Tạo khóa bí mật ECDSA cho chứng chỉ con (user_key.key.pem)</b> <br/>
+                                    <b>- Tạo khóa riêng ECDSA cho chứng chỉ người dùng (user_key.key.pem)</b> <br/>
                                     <code>openssl ecparam -name secp256k1 -genkey -noout -out user_key.key.pem</code>
                                     <br/><br/>
-                                    <b>- Tạo yêu cầu ký chứng chỉ (CSR) cho chứng chỉ con (user_cert.csr.pem)</b> <br/>
-                                    <code>openssl req -new -sha256 -key user_key.key.pem -out user_cert.csr.pem -subj
+                                    <b>- Tạo yêu cầu ký chứng chỉ (CSR) cho chứng chỉ người dùng (user_csr.csr.pem)</b> <br/>
+                                    <code>openssl req -new -sha256 -key user_key.key.pem -out user_csr.csr.pem -subj
                                         "/C=VN/ST=HCM/L=Ho Chi Minh/O=ClientOrg/OU=IT/CN=ThaiNT"</code>
                                 </Box>
                             {/*</Typography>*/}
@@ -354,7 +351,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                                         variant="body2"
                                         sx={{pointerEvents: "none"}}
                                     >
-                                        {(!fileCsr) ? "Drag and drop the CSR, Public Key or X509 certificate here or click here to upload." : fileCsr?.name}
+                                        {(!fileCsr) ? "Kéo và thả CSR, Khóa công khai hoặc Chứng chỉ X.509 vào đây, hoặc nhấp để tải lên" : fileCsr?.name}
                                     </Typography>
                                     <input
                                         type="file"
@@ -403,15 +400,15 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                     <Box>
                         <Box sx={{display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 2}}>
                             <Box sx={{flexGrow: 1}}>
-                                <Typography variant='subtitle1'>Thông tin Chứng chỉ người dùng ký bởi DCA:</Typography>
+                                <Typography variant='subtitle1'>Thông tin chứng chỉ người dùng do DCA cấp phát</Typography>
                             </Box>
                             <ButtonGroup variant="outlined" size="small" color="primary">
-                                <Tooltip title="Copy certificate to clipboard">
+                                <Tooltip title="Sao chép chứng chỉ vào clipboard">
                                     <Button onClick={handleCopy}>
                                         <ContentCopy fontSize="small"/>
                                     </Button>
                                 </Tooltip>
-                                <Tooltip title="Download User Certificate">
+                                <Tooltip title="Tải xuống chứng chỉ người dùng">
                                     <Button onClick={downloadCertIssuedHandler} size="small">
                                         user_certificate_issued.crt.pem<Download fontSize="small"/>
                                     </Button>
@@ -440,7 +437,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                             sx={{display: "flex", justifyContent: "flex-end", mt: 2, gap: 1}}
                         >
                             <Button onClick={handleBack}>Cấp phát mới</Button>
-                            <Button onClick={handleVerifyCertificateIssue}>Xác thực chứng chỉ</Button>
+                            <Button onClick={handleVerifyCertificateIssue}>Xác minh chứng chỉ</Button>
                         </Box>
 
                         {signResult && (
@@ -451,7 +448,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                 {(activeStep === 2 || activeStep === 3) && ( // Done
                     <Box>
                         <Typography variant="h6">
-                            {verifyResult.valid ? "✅ Chứng chỉ hợp lệ (VALID ISSUED CERTIFICATE)" : "❌ Chứng chỉ không hợp lệ (INVALID ISSUED CERTIFICATE)"}
+                            {verifyResult.valid ? "✅ Chứng chỉ đã cấp phát hợp lệ (VALID ISSUED CERTIFICATE)" : "❌ Chứng chỉ đã cấp phát không hợp lệ (INVALID ISSUED CERTIFICATE)"}
                         </Typography>
                         <Typography sx={{mb: 2}}>{verifyResult.message}</Typography>
                         {verifyResult.messageZk && <Typography sx={{mb: 2}}>{verifyResult.messageZk}</Typography>}
@@ -475,7 +472,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                         >
                             <Button onClick={handleBack}>Xem chứng chỉ (Issued Certificate)</Button>
                             {(verifyResult.valid && verifyResult.on_chain_signal_public) &&
-                                <Button onClick={handleVerifyCertificateIssueZkSnark}>Verify client zk-SNARK</Button>}
+                                <Button onClick={handleVerifyCertificateIssueZkSnark}>Xác minh bằng chứng zk-SNARK (Verify client zk-SNARK)</Button>}
                         </Box>
                         {signResult && (
                             <ResultJsonMetaCopyable dataJson={signResult}/>

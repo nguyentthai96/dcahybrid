@@ -63,10 +63,6 @@ export const CertificateDetails: React.FC<CertificateDetailsProps> = ({certifica
                                 <TableCell>Issuer</TableCell>
                                 <TableCell>{details.issuer}</TableCell>
                             </TableRow>
-                            {/*<TableRow>*/}
-                            {/*    <TableCell>Validity (days)</TableCell>*/}
-                            {/*    <TableCell>{`${details.validityDays} (${details.leftDays.toFixed(0)} left)`}</TableCell>*/}
-                            {/*</TableRow>*/}
                             <TableRow>
                                 <TableCell>Public Key</TableCell>
                                 <TableCell>{details.algorithm}</TableCell>

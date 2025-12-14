@@ -10,7 +10,7 @@ export default function CertificateIssuedAlert({open, onClose, onOk }: Certifica
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-            <DialogTitle>Certificate Issued</DialogTitle>
+            <DialogTitle>Cấp phát thành công (Certificate Issued)</DialogTitle>
             <DialogContent>
                 <Typography fontSize={14}>
                     ✅ Chứng chỉ đã phát hành thành công (Certificate Issued)!
@@ -22,41 +22,5 @@ export default function CertificateIssuedAlert({open, onClose, onOk }: Certifica
                 <Button variant="contained" onClick={onOk}>OK</Button>
             </DialogActions>
         </Dialog>
-        /*<Alert
-            severity="success"
-            onClose={onClose}
-            variant="filled"
-            sx={{
-                position: "fixed",
-                top: 20,
-                right: 20,
-                width: "360px",
-                zIndex: 9999
-            }}
-        >
-            <AlertTitle>Chứng chỉ đã được cấp phát</AlertTitle>
-            Bạn có thể tải xuống chứng chỉ và tiến hành bước tiếp theo.
-
-            {certificateUrl && (
-                <Button
-                    sx={{mt: 1}}
-                    href={certificateUrl}
-                    download="user_crt.crt.pem"
-                    color="inherit"
-                    variant="outlined"
-                >
-                    Tải chứng chỉ
-                </Button>
-            )}
-
-            <Stack direction="row" spacing={2} sx={{mt: 2}}>
-                <Button variant="outlined" onClick={onClose}>
-                    Close
-                </Button>
-                <Button variant="contained" onClick={onOk}>
-                    OK
-                </Button>
-            </Stack>
-        </Alert>*/
     );
 }

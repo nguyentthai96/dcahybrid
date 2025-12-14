@@ -18,7 +18,6 @@ interface PdfSignerProps {
 export default function PdfSigner({caSystemInfo}: PdfSignerProps) {
     const [keyFile, setKeyFile] = useState<string>("");
     const [certFile, setCertFile] = useState<string>("");
-    // const [caFile, setCaFile] = useState<string>("");
     //
     const [pdfFile, setPdfFile] = useState<File | null>(null);
     //
@@ -29,15 +28,10 @@ export default function PdfSigner({caSystemInfo}: PdfSignerProps) {
     const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
     //
 
-    /*const readFile = (file: File) => new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsText(file);
-    });*/
 
     const handleSign = async (pdfFile: File) => {
         setPdfFile(pdfFile);
-        if (!keyFile || !certFile || !pdfFile) return setSignError("Missing Private Key, User Cert or PDF");
+        if (!keyFile || !certFile || !pdfFile) return setSignError("Thiếu Khóa riêng, Chứng chỉ người dùng hoặc Tệp PDF");
         try {
             const pdfBuffer = await pdfFile.arrayBuffer();
             const signedBytes = await signPdfPAdES(pdfBuffer, keyFile, certFile, caSystemInfo?.dca_certificate);
@@ -60,11 +54,11 @@ export default function PdfSigner({caSystemInfo}: PdfSignerProps) {
 
     return (
         <Container maxWidth="lg">
-            <Paper sx={{p: 3}}>
-                <Typography variant="h6" gutterBottom color="primary">PAdES-B ECDSA Signer</Typography>
+            <Paper sx={{p: 1}}>
+                <Typography variant="h6" gutterBottom color="primary">Ký PAdES-B ECDSA</Typography>
                 {/* PRIVATE KEY */}
                 <FileUploadBox
-                    label="Private Key"
+                    label="Khóa riêng (Private Key)"
                     icon={<VpnKey/>}
                     accept=".pem,.key,.txt"
                     externalText={keyFile}
@@ -74,7 +68,7 @@ export default function PdfSigner({caSystemInfo}: PdfSignerProps) {
                 />
                 {/* USER CERT */}
                 <FileUploadBox
-                    label="User Certificate"
+                    label="Chứng chỉ người dùng (User Certificate)"
                     icon={<VerifiedUser/>}
                     accept=".pem,.crt,.cer,.txt"
                     externalText={certFile}
@@ -86,7 +80,7 @@ export default function PdfSigner({caSystemInfo}: PdfSignerProps) {
                 {/* PDF */}
                 <Button component="label" variant="contained" startIcon={<PictureAsPdf/>} fullWidth
                         sx={{mb: 2, height: 50}}>
-                    {pdfFile ? ((pdfFile.name) + (signedUrl ? " (Signed)" : "")) : "Select PDF"}
+                    {pdfFile ? ((pdfFile.name) + (signedUrl ? " (Đã ký)" : "")) : "Chọn tệp PDF"}
                     <input type="file" hidden accept="application/pdf"
                            onChange={(e) => {
                                handleSign(e.target.files?.[0] as File || null );
@@ -108,10 +102,10 @@ export default function PdfSigner({caSystemInfo}: PdfSignerProps) {
             </Paper>
             <Paper sx={{p: 3}}>
                 {/* <!-- VERIFY PDF --> */}
-                <Typography variant="h6" gutterBottom color="primary">Verify PAdES-B ECDSA Signed</Typography>
+                <Typography variant="h6" gutterBottom color="primary">Xác minh chữ ký PAdES-B ECDSA</Typography>
                 <Box mx="auto">
                     <Button component="label" variant="outlined" fullWidth sx={{height: 100, borderStyle: 'dashed'}}>
-                        {verifyFile ? verifyFile.name : "Upload PDF to Verify"}
+                        {verifyFile ? verifyFile.name : "Tải lên PDF để xác minh"}
                         <input type="file" hidden accept="application/pdf"
                                onChange={(e) => {
                                    setVerifyFile(e.target.files?.[0] || null);
@@ -125,9 +119,9 @@ export default function PdfSigner({caSystemInfo}: PdfSignerProps) {
                                 {verifyResult.isValid ? <CheckCircle color="success"/> : <ErrorIcon color="error"/>}
                                 <Typography variant="h5" align={"center"}>{verifyResult.isValid ? "VALID" : "INVALID"}</Typography>
                             </Box>
-                            <Typography align={"left"}><strong>Subject:</strong> {verifyResult.signerSubject}</Typography>
-                            <Typography align={"left"}><strong>Issuer:</strong> {verifyResult.signerIssuer}</Typography>
-                            <Typography  align={"left"}><strong>Time:</strong> {verifyResult.signingTime?.toLocaleString()}</Typography>
+                            <Typography align={"left"}><strong>Chủ thể (Subject):</strong> {verifyResult.signerSubject}</Typography>
+                            <Typography align={"left"}><strong>Nhà phát hành (Issuer):</strong> {verifyResult.signerIssuer}</Typography>
+                            <Typography  align={"left"}><strong>Thời điểm ký:</strong> {verifyResult.signingTime?.toLocaleString()}</Typography>
                             {verifyResult.errors.map((e, i) => <Alert severity="error" key={i}
                                                                       sx={{mt: 1}}>{e}</Alert>)}
                         </Paper>

@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Box, Typography, TextField, Paper} from '@mui/material';
+import {Box, Paper, TextField, Typography} from '@mui/material';
 
 interface FileUploadBoxProps {
     label: string;
@@ -42,9 +42,9 @@ export default function FileUploadBox({
     };
 
     return (
-        <Paper variant="outlined" sx={{p: 2, mb: 2, display: "flex", flexDirection: "column", gap: 2}}>
+        <Paper variant="outlined" sx={{p: 2, display: "flex", flexDirection: "column", gap: 2}}>
             <Box sx={{display: "flex", flexDirection: "row", gap: 2}}>
-                <Box flex={1}
+                <Box flex={1.25}
                      onClick={() => fileInputRef.current?.click()}
                      onDragOver={(e) => {
                          e.preventDefault();
@@ -70,7 +70,7 @@ export default function FileUploadBox({
                         {icon} {label}
                     </Typography>
                     <Typography variant="body2" align="center" color="textSecondary">
-                        {file ? file.name : "Click or Drop File Here"}
+                        {file ? file.name : "Nhấp hoặc kéo thả tệp vào đây"}
                     </Typography>
                     <input
                         type="file" style={{display: "none"}}
@@ -87,7 +87,7 @@ export default function FileUploadBox({
                         fullWidth
                         multiline
                         rows={10}
-                        placeholder="Content will appear here..."
+                        placeholder="Nội dung dự liệu sẽ hiển thị tại đây..."
                         value={textContent}
                         onChange={(e) => setTextContent(e.target.value)}
                         slotProps={{
