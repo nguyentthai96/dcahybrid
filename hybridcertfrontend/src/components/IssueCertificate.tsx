@@ -33,7 +33,7 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
 
         const [activeStep, setActiveStep] = React.useState<number>(0);
         const [csr, setCsr] = React.useState<PublicKey | null>(null);
-        const [certName, setCertName] = React.useState<string>("CN=, O=, C=VN, E="        );
+        const [certName, setCertName] = React.useState<string>("CN=, O=, C=VN, E=");
         const [ownerInfoOrId, setOwnerInfoOrId] = React.useState<string>('');
 
         const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -275,22 +275,22 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                     <Box sx={{mt: 2}}>
                         <Box gap={2}>
                             {/*<Typography sx={{display: "flex", alignItems: "left", flexDirection: "column"}}>*/}
-                                <Box sx={{display: "flex", alignItems: "left",}}>
-                                    Cung cấp Yêu cầu ký chứng chỉ (CSR), hoặc dán Khóa công khai hoặc chứng chỉ X.509
-                                    (Có thể dùng openssl để tạo theo lệnh)
-                                </Box>
-                                <Box sx={{
-                                    bgcolor: 'grey.100', alignItems: "left", display: "flex-start", textAlign: 'left',
-                                    m: 0, // Thêm margin-top cho dễ nhìn
-                                    p: 1
-                                }}>
-                                    <b>- Tạo khóa riêng ECDSA cho chứng chỉ người dùng (user_key.key.pem)</b> <br/>
-                                    <code>openssl ecparam -name secp256k1 -genkey -noout -out user_key.key.pem</code>
-                                    <br/><br/>
-                                    <b>- Tạo yêu cầu ký chứng chỉ (CSR) cho chứng chỉ người dùng (user_csr.csr.pem)</b> <br/>
-                                    <code>openssl req -new -sha256 -key user_key.key.pem -out user_csr.csr.pem -subj
-                                        "/C=VN/ST=HCM/L=Ho Chi Minh/O=ClientOrg/OU=IT/CN=ThaiNT"</code>
-                                </Box>
+                            <Box sx={{display: "flex", alignItems: "left",}}>
+                                Cung cấp Yêu cầu ký chứng chỉ (CSR), hoặc dán Khóa công khai hoặc chứng chỉ X.509
+                                (Có thể dùng openssl để tạo theo lệnh)
+                            </Box>
+                            <Box sx={{
+                                bgcolor: 'grey.100', alignItems: "left", display: "flex-start", textAlign: 'left',
+                                m: 0, // Thêm margin-top cho dễ nhìn
+                                p: 1
+                            }}>
+                                <b>- Tạo khóa riêng ECDSA cho chứng chỉ người dùng (user_key.key.pem)</b> <br/>
+                                <code>openssl ecparam -name prime256v1 -genkey -noout -out user_key.key.pem</code>
+                                <br/><br/>
+                                <b>- Tạo yêu cầu ký chứng chỉ (CSR) cho chứng chỉ người dùng (user_csr.csr.pem)</b> <br/>
+                                <code>openssl req -new -sha256 -key user_key.key.pem -out user_csr.csr.pem -subj
+                                    "/C=VN/ST=HCM/L=Ho Chi Minh/O=ClientOrg/OU=IT/CN=ThaiNT"</code>
+                            </Box>
                             {/*</Typography>*/}
                             <List sx={{width: "100%"}}>
                                 <ListItem>
@@ -472,7 +472,8 @@ export const IssueCertificate: React.FC<IssueCertificateProps> = ({fetchStatus})
                         >
                             <Button onClick={handleBack}>Xem chứng chỉ (Issued Certificate)</Button>
                             {(verifyResult.valid && verifyResult.on_chain_signal_public) &&
-                                <Button onClick={handleVerifyCertificateIssueZkSnark}>Xác minh bằng chứng zk-SNARK (Verify client zk-SNARK)</Button>}
+                                <Button onClick={handleVerifyCertificateIssueZkSnark}>Xác minh bằng chứng zk-SNARK (Verify
+                                    client zk-SNARK)</Button>}
                         </Box>
                         {signResult && (
                             <ResultJsonMetaCopyable dataJson={signResult}/>
