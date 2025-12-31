@@ -8,7 +8,7 @@ import random
 from flask import Flask, request, jsonify
 from ecdsa import SECP256k1, NIST256p, numbertheory
 from ecdsa.util import sigencode_string, sigdecode_string
-from ecdsa import VerifyingKey, SECP256k1
+from ecdsa import VerifyingKey
 from cryptography.hazmat.primitives.asymmetric.utils import (
     encode_dss_signature, decode_dss_signature
 )
@@ -17,10 +17,8 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.asymmetric import ec as _ec
 from cryptography.hazmat.primitives import hashes as _hashes
 
-from ecdsa import SECP256k1
 import subprocess
 import time
 from datetime import datetime, timezone, timedelta
@@ -37,10 +35,11 @@ from LevelDBMerkleTreePymerkle import LevelDBMerkleTreePymerkle
 from MPCNode import MPCNode
 
 # prime256v1 = secp256r1
-CURVE = SECP256k1
-# CURVE = NIST256p
+# CURVE = SECP256k1
+CURVE = NIST256p  # prime256v1/secp256r1
 G = CURVE.generator
 ORDER = G.order()
+EC_CURVE = ec.SECP256R1()
 
 
 # ===== Custom ASN.1 Structures for X.509 =====
@@ -131,19 +130,21 @@ class DecentralizedCA:
         ])
 
         # 1. Init MPC Nodes
-        self.node_a = MPCNode("NodeA")
-        self.node_b = MPCNode("NodeB")
-        self.node_c = MPCNode("NodeC")
+        self.node_a = MPCNode("NodeA", curve=CURVE)
+        self.node_b = MPCNode("NodeB", curve=CURVE)
+        self.node_c = MPCNode("NodeC", curve=CURVE)
         # Joint PK = pkA + pkB; public key of CA
         self.joint_pk_point = self.node_a.pk_share + self.node_b.pk_share
 
         # Convert to VerifyingKey
         self.joint_vk = VerifyingKey.from_public_point(self.joint_pk_point, curve=CURVE)
         print(f"[SYSTEM] CA Initialized. Public Key: {self.joint_vk.to_string('compressed').hex()}")
+        t0 = now_ms()
         self.dca_crt = self.self_signed_certificate()
         self.dca_cert_obj = x509.load_pem_x509_certificate(
             self.dca_crt.encode("utf-8")
         )
+        print(f"[SYSTEM] CA Self-Signed Certificate Generated. Took {round(now_ms() - t0, 2)}ms.")
 
         # 2. Khởi tạo Storage (Thay thế List RAM bằng LevelDB)
         # Dữ liệu sẽ được lưu bền vững vào thư mục './merkle_db'
@@ -183,8 +184,7 @@ class DecentralizedCA:
         uncompressed_hex = self.get_public_key_uncompressed_hex()['x963_uncompressed']
         pub_bytes = bytes.fromhex(uncompressed_hex)
         public_key = ec.EllipticCurvePublicKey.from_encoded_point(
-            ec.SECP256K1(), pub_bytes
-            # ec.SECP256R1(), pub_bytes
+            EC_CURVE, pub_bytes
         )
         builder = x509.CertificateBuilder()
         subject = self.issuer
@@ -229,7 +229,7 @@ class DecentralizedCA:
 
         # 3. Tạo TBS bằng ephemeral key
         # ============================
-        _ephemeral_priv = _ec.generate_private_key(_ec.SECP256R1())
+        _ephemeral_priv = ec.generate_private_key(EC_CURVE)
         _temp_cert = builder.sign(
             private_key=_ephemeral_priv,
             algorithm=_hashes.SHA256()
@@ -264,7 +264,7 @@ class DecentralizedCA:
 
         # s = k^-1 * (z + r*sk_total)  # sk_total private share key
         sk_total = (self.node_a._sk_share + self.node_b._sk_share) % ORDER
-        # print(f"DEBUG [SYSTEM] CA Initialized PRK: {hex(sk_total)[2:]}")
+        print(f"DEBUG [SYSTEM] CA Initialized PRK: {hex(sk_total)[2:]}")
         inv_k = numbertheory.inverse_mod(k_total, ORDER)
         s = (inv_k * (z + r * sk_total)) % ORDER
 
@@ -499,9 +499,9 @@ class DecentralizedCA:
         # region Method verify_user_certificate
         def check_validity(cert):
             now = datetime.now(timezone.utc)
-            if now < cert.not_valid_before.replace(tzinfo=timezone.utc):
+            if now < cert.not_valid_before_utc.replace(tzinfo=timezone.utc):
                 return False, "Certificate not valid yet"
-            if now > cert.not_valid_after.replace(tzinfo=timezone.utc):
+            if now > cert.not_valid_after_utc.replace(tzinfo=timezone.utc):
                 return False, "Certificate expired"
             return True, "OK"
 
@@ -974,7 +974,7 @@ def build_certificate_asn1(tbs_bytes, sig_der):
 
 # call build_tbs_from_csr get builder
 def get_tbs_bytes(builder):
-    ephemeral_priv = ec.generate_private_key(ec.SECP256R1())
+    ephemeral_priv = ec.generate_private_key(EC_CURVE)
     temp_cert = builder.sign(
         private_key=ephemeral_priv,
         algorithm=hashes.SHA256(),

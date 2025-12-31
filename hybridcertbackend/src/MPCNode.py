@@ -3,17 +3,14 @@ import random
 
 from ecdsa import SECP256k1, NIST256p
 
-# prime256v1 = secp256r1
-CURVE = SECP256k1
-# CURVE = NIST256p
-G = CURVE.generator
-ORDER = G.order()
-# ORDER = CURVE.generator.order()
-
 
 class MPCNode:
-    def __init__(self, name, key_dir="./keystore"):
+    # prime256v1 = secp256r1 NIST256p | secp256k1 SECP256k1
+    def __init__(self, name, key_dir="./keystore", curve=NIST256p):
         self.name = name
+        _G = curve.generator
+        # ORDER = CURVE.generator.order()
+        self.ORDER = _G.order()
         self.key_file = os.path.join(key_dir, f"{name}.pem")
 
         # Tạo thư mục lưu key nếu chưa có
@@ -28,15 +25,15 @@ class MPCNode:
                 self._sk_share = int(hex_key, 16)
         else:
             print(f"[{name}] Generating NEW key pair...")
-            self._sk_share = random.randrange(1, ORDER)
+            self._sk_share = random.randrange(1, self.ORDER)
             # Lưu key lại để lần sau dùng
             with open(self.key_file, "w") as f:
                 # Lưu dưới dạng Hex string
                 f.write(hex(self._sk_share)[2:]) # bỏ tiền tố 0x
 
         # Tính Public Key từ Secret Share đã load/gen
-        self.pk_share = self._sk_share * G
+        self.pk_share = self._sk_share * _G
 
     def generate_k_share(self):
         # k (ephemeral key) luôn phải random mỗi lần ký, KHÔNG ĐƯỢC LƯU
-        return random.randrange(1, ORDER)
+        return random.randrange(1, self.ORDER)
